@@ -75,9 +75,22 @@ mock.module("@midday/bot", () => ({
   processInboxUpload: mock(() => Promise.resolve(null)),
 }));
 
-const { buildDiscordThreadName, registerMiddayBotRuntime } = await import(
-  "../../bot/runtime"
-);
+const {
+  buildDiscordThreadName,
+  normalizeDiscordMessageText,
+  registerMiddayBotRuntime,
+} = await import("../../bot/runtime");
+
+describe("Discord model input", () => {
+  test("removes the bot mention and normalizes Discord mention syntax", () => {
+    expect(
+      normalizeDiscordMessageText(
+        "<@!bot_id> how much did <@123> spend in <#456>? <@&789>",
+        "bot_id",
+      ),
+    ).toBe("how much did @123 spend in #456? @789");
+  });
+});
 
 registerMiddayBotRuntime();
 
@@ -641,6 +654,12 @@ describe("bot runtime link-code consumption", () => {
 
       expect(posts).toEqual(["Your bank balance is $12,345."]);
       expect(cleanup).toHaveBeenCalled();
+      expect(toAiMessagesMock).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "message_123" }),
+        ]),
+        expect.objectContaining({ includeNames: true }),
+      );
     } finally {
       if (originalGuildId === undefined) {
         delete process.env.DISCORD_GUILD_ID;

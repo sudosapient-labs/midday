@@ -2,18 +2,27 @@ import { describe, expect, test } from "bun:test";
 import { getRequiredLexicalTools } from "./tools";
 
 describe("lexical transaction tool routing", () => {
-  test("includes read and write tools for a spending note", () => {
+  test("routes a spending question to read-only report tools", () => {
     expect(getRequiredLexicalTools("today we spent 55 on water")).toEqual([
-      "bank_accounts_list",
-      "bank_accounts_create",
-      "categories_list",
+      "reports_spending",
+      "reports_expenses",
       "transactions_list",
-      "transactions_get",
+    ]);
+  });
+
+  test("keeps write tools available only for an explicit save request", () => {
+    expect(getRequiredLexicalTools("save these expenses")).toEqual([
+      "categories_list",
+      "bank_accounts_list",
       "transactions_create",
       "transactions_create_bulk",
-      "transactions_update",
-      "transactions_update_bulk",
     ]);
+  });
+
+  test("routes balance questions to balance tools", () => {
+    expect(getRequiredLexicalTools("what is my current bank balance?")).toEqual(
+      ["bank_accounts_balances", "bank_accounts_list"],
+    );
   });
 
   test("includes lookup tools when updating transactions", () => {

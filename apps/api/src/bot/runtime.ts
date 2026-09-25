@@ -61,7 +61,7 @@ import {
 } from "@midday/db/queries";
 import { createLoggerWithContext } from "@midday/logger";
 import type { ModelMessage } from "ai";
-import type { Attachment, Message, Thread } from "chat";
+import type { AiMessage, Attachment, Message, Thread } from "chat";
 import { toAiMessages } from "chat";
 import type { SendblueAdapter } from "chat-adapter-sendblue";
 
@@ -253,7 +253,7 @@ async function handleIncomingMessage(
     }
   }
 
-  const history = await getConversationHistory(thread);
+  const history = await getConversationHistory(thread, message);
 
   const mcpCtx: McpContext = {
     db,
@@ -290,7 +290,13 @@ async function handleIncomingMessage(
       : "");
 
   const modelMessages = await toAiMessages(history, {
-    includeNames: platform === "slack",
+    // Discord channels can contain several linked users. Preserve the
+    // speaker name so the assistant does not merge their requests together.
+    includeNames: platform === "slack" || platform === "discord",
+    transformMessage:
+      platform === "discord"
+        ? (aiMessage) => normalizeDiscordAiMessage(aiMessage)
+        : undefined,
   });
 
   stripFileAndImageParts(modelMessages as Array<ModelMessage>);
@@ -885,9 +891,74 @@ async function processIncomingAttachments(params: {
   return { summaries, richMessages };
 }
 
-async function getConversationHistory(thread: Thread<BotThreadState>) {
+async function getConversationHistory(
+  thread: Thread<BotThreadState>,
+  currentMessage?: Message,
+) {
   await thread.refresh();
-  return thread.recentMessages || [];
+  const messages = [...(thread.recentMessages || [])];
+
+  // A Gateway event can reach the handler before the SDK's history refresh
+  // sees the just-created Discord message. Keep the current turn exactly once
+  // so the model never answers from stale context or receives a duplicate.
+  if (
+    currentMessage &&
+    !messages.some((item) => item.id === currentMessage.id)
+  ) {
+    messages.push(currentMessage);
+  }
+
+  return messages;
+}
+
+/**
+ * Convert Discord's raw mention syntax into stable model input. Gateway
+ * messages arrive with `<@id>` while fetched history has already gone through
+ * the adapter's plain-text converter, so normalizing both paths avoids leaking
+ * mention markup into the prompt.
+ */
+export function normalizeDiscordMessageText(
+  text: string,
+  applicationId = process.env.DISCORD_APPLICATION_ID,
+) {
+  const botId = applicationId?.trim();
+  let normalized = text;
+
+  if (botId) {
+    const escapedId = botId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    normalized = normalized
+      .replace(new RegExp(`<@!?${escapedId}>`, "gu"), " ")
+      .replace(new RegExp(`@${escapedId}(?!\\d)`, "gu"), " ");
+  }
+
+  return normalized
+    .replace(/<@!?(\d+)>/gu, "@$1")
+    .replace(/<@&(\d+)>/gu, "@$1")
+    .replace(/<#(\d+)>/gu, "#$1")
+    .replace(/[ \t]{2,}/gu, " ")
+    .trim();
+}
+
+function normalizeDiscordAiMessage(aiMessage: AiMessage): AiMessage {
+  if (typeof aiMessage.content === "string") {
+    return {
+      ...aiMessage,
+      content: normalizeDiscordMessageText(aiMessage.content),
+    };
+  }
+
+  if (aiMessage.role !== "user") {
+    return aiMessage;
+  }
+
+  return {
+    ...aiMessage,
+    content: aiMessage.content.map((part) =>
+      part.type === "text"
+        ? { ...part, text: normalizeDiscordMessageText(part.text) }
+        : part,
+    ),
+  };
 }
 
 function isSupportedAttachment(attachment: Attachment) {
@@ -963,7 +1034,8 @@ export function buildDiscordThreadName(
   }
 
   if (/\b(?:tdy|today)\b.*\b(?:spent|spending|expenses?)\b/iu.test(name)) {
-    const amounts = Array.from(name.matchAll(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?=\s|$|[-–—])/gu),
+    const amounts = Array.from(
+      name.matchAll(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?=\s|$|[-–—])/gu),
       (match) => Number(match[1]),
     ).filter(Number.isFinite);
 

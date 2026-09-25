@@ -15,6 +15,14 @@ export function createMiddayBot() {
     sendblue: createSendblueAdapter(),
   };
 
+  // Discord is created only when configured, but keep it in the adapter map's
+  // static type so the Gateway entrypoint can access it without weakening the
+  // Chat adapter contract. The guarded runtime path below guarantees it exists
+  // before anyone calls getAdapter("discord").
+  const typedAdapters = adapters as typeof adapters & {
+    discord: ReturnType<typeof createDiscordAdapter>;
+  };
+
   // The Discord adapter validates its credentials during construction. Keep it
   // optional so environments that have not enabled Discord remain bootable.
   if (
@@ -22,12 +30,12 @@ export function createMiddayBot() {
     process.env.DISCORD_PUBLIC_KEY &&
     process.env.DISCORD_APPLICATION_ID
   ) {
-    Object.assign(adapters, { discord: createDiscordAdapter() });
+    typedAdapters.discord = createDiscordAdapter();
   }
 
   return new Chat({
     userName: "midday",
-    adapters,
+    adapters: typedAdapters,
     state: createRedisState({ url: resolveRedisUrl() }),
     concurrency: {
       strategy: "debounce",

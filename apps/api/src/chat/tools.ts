@@ -233,7 +233,7 @@ const DOMAIN_ALIASES: Record<string, string[]> = {
 };
 
 function modelMessageText(messages: ModelMessage[]): string {
-  return messages
+  const userTexts = messages
     .filter((message) => message.role === "user")
     .flatMap((message) => {
       if (typeof message.content === "string") return [message.content];
@@ -242,8 +242,23 @@ function modelMessageText(messages: ModelMessage[]): string {
       return message.content.flatMap((part) =>
         "text" in part && typeof part.text === "string" ? [part.text] : [],
       );
-    })
-    .join(" ");
+    });
+
+  const latest = userTexts.at(-1) ?? "";
+  // Route from the current request whenever it names a domain. For short
+  // follow-ups such as “yes, save it” or “what about that?”, retain one prior
+  // turn so the required tool family is still available without allowing an
+  // old write request to contaminate every later question.
+  if (
+    /\b(?:account|balance|cash|category|customer|document|expense|invoice|money|payment|project|receipt|report|revenue|runway|spend|spent|tag|tax|team|time|transaction|tracker|save|create|update|delete|send)\b/iu.test(
+      latest,
+    ) ||
+    userTexts.length < 2
+  ) {
+    return latest;
+  }
+
+  return userTexts.slice(-2).join(" ");
 }
 
 function lexicalTokens(text: string): Set<string> {
@@ -266,25 +281,62 @@ function lexicalTokens(text: string): Set<string> {
 }
 
 export function getRequiredLexicalTools(query: string): string[] {
-  if (
-    !/\b(?:transactions?|expenses?|spend|spending|spent|payments?)\b/iu.test(
+  const hasTransactionContext =
+    /\b(?:transactions?|expenses?|spend|spending|spent|payments?|purchases?|outlays?|balance|cash)\b/iu.test(
       query,
-    )
-  ) {
+    );
+
+  if (!hasTransactionContext) {
     return [];
   }
 
-  return [
-    "bank_accounts_list",
-    "bank_accounts_create",
-    "categories_list",
-    "transactions_list",
-    "transactions_get",
-    "transactions_create",
-    "transactions_create_bulk",
-    "transactions_update",
-    "transactions_update_bulk",
-  ];
+  const isWrite =
+    /\b(?:add|book|create|enter|log|record|save|store|track)\b/iu.test(query);
+  const isCorrection =
+    /\b(?:change|correct|edit|fix|update|categor(?:ize|ise))\b/iu.test(query);
+  const isDelete = /\b(?:delete|remove|void)\b/iu.test(query);
+
+  if (isDelete) {
+    return [
+      "transactions_list",
+      "transactions_get",
+      "transactions_delete",
+      "transactions_delete_bulk",
+    ];
+  }
+
+  if (isCorrection) {
+    return [
+      "categories_list",
+      "bank_accounts_list",
+      "transactions_list",
+      "transactions_get",
+      "transactions_update",
+      "transactions_update_bulk",
+    ];
+  }
+
+  if (isWrite) {
+    return [
+      "categories_list",
+      "bank_accounts_list",
+      "transactions_create",
+      "transactions_create_bulk",
+    ];
+  }
+
+  if (/\b(?:balance|cash position|cash on hand|bank account)\b/iu.test(query)) {
+    return ["bank_accounts_balances", "bank_accounts_list"];
+  }
+
+  // Read-only spending questions need reports and transaction lookup tools.
+  // Keeping write tools out of this set prevents the model from interpreting a
+  // sentence such as “we spent 55 on water” as permission to save it.
+  if (/\b(?:spend|spending|spent|expenses?|outlays?)\b/iu.test(query)) {
+    return ["reports_spending", "reports_expenses", "transactions_list"];
+  }
+
+  return ["transactions_list", "transactions_get"];
 }
 
 function selectToolsLexically(query: string, maxTools: number): string[] {
