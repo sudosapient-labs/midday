@@ -3,6 +3,7 @@ import claudeMcpApp from "./claude-mcp/config";
 import clineMcpApp from "./cline-mcp/config";
 import copilotMcpApp from "./copilot-mcp/config";
 import cursorMcpApp from "./cursor-mcp/config";
+import discordApp from "./discord/config-client";
 import eInvoiceApp from "./e-invoice/config";
 import fortnoxApp from "./fortnox/config-client";
 import geminiMcpApp from "./gemini-mcp/config";
@@ -31,6 +32,7 @@ export const apps = [
   gmailApp,
   outlookApp,
   slackApp,
+  discordApp,
   telegramApp,
   quickBooksApp,
   xeroApp,

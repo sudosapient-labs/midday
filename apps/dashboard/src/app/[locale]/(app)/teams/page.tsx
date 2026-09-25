@@ -45,11 +45,14 @@ export default async function Teams() {
           <div>
             <div className="text-center">
               <h1 className="text-lg lg:text-xl mb-2 font-serif">
-                Welcome, {user?.fullName?.split(" ").at(0)}
+                {user?.fullName?.split(" ").at(0)
+                  ? `Welcome, ${user.fullName.split(" ").at(0)}`
+                  : "Welcome"}
               </h1>
               {invites?.length > 0 ? (
                 <p className="text-[#878787] text-sm mb-8">
-                  Join a team you’ve been invited to or create a new one.
+                  You have pending invitations. Join a company below, or create
+                  a new one if this is your own workspace.
                 </p>
               ) : (
                 <p className="text-[#878787] text-sm mb-8">
@@ -59,18 +62,20 @@ export default async function Teams() {
             </div>
           </div>
 
+          {/* Show invites first so invited users join instead of creating a company */}
+          {invites?.length > 0 && <TeamInvites />}
+
           {/* If there are teams, show them */}
-          {teams?.length && (
+          {!!teams?.length && (
             <>
-              <span className="text-sm text-[#878787] mb-4">Teams</span>
+              <span className="text-sm text-[#878787] mb-4 mt-6 block">
+                Teams
+              </span>
               <div className="max-h-[260px] overflow-y-auto">
                 <SelectTeamTable data={teams} />
               </div>
             </>
           )}
-
-          {/* If there are invites, show them */}
-          {invites?.length > 0 && <TeamInvites />}
 
           <div className="text-center mt-12 border-t-[1px] border-border pt-6 w-full relative border-dashed">
             <span className="absolute left-1/2 -translate-x-1/2 text-sm text-[#878787] bg-background -top-3 px-4">
@@ -78,7 +83,7 @@ export default async function Teams() {
             </span>
             <Link href="/onboarding" className="w-full">
               <Button className="w-full mt-2" variant="outline">
-                Create team
+                Create a company
               </Button>
             </Link>
           </div>

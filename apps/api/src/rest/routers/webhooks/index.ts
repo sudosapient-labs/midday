@@ -1,6 +1,7 @@
 import { publicMiddleware } from "@api/rest/middleware";
 import type { Context } from "@api/rest/types";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { discordWebhookRouter } from "./discord";
 import { inboxWebhookRouter } from "./inbox";
 import { plaidWebhookRouter } from "./plaid";
 import { polarWebhookRouter } from "./polar";
@@ -17,6 +18,7 @@ app.use("*", ...publicMiddleware);
 
 // Mount individual webhook routes
 app.route("/inbox", inboxWebhookRouter);
+app.route("/discord", discordWebhookRouter);
 app.route("/plaid", plaidWebhookRouter);
 app.route("/polar", polarWebhookRouter);
 app.route("/sendblue", sendblueWebhookRouter);

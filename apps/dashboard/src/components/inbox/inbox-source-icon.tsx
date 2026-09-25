@@ -13,6 +13,7 @@ type InboxSource =
   | "whatsapp"
   | "telegram"
   | "sendblue"
+  | "discord"
   | null;
 
 function getInboxSource(data: {
@@ -34,6 +35,7 @@ function getInboxSource(data: {
     if (source === "whatsapp") return "whatsapp";
     if (source === "telegram") return "telegram";
     if (source === "sendblue") return "sendblue";
+    if (source === "discord") return "discord";
   }
 
   return null;
@@ -68,6 +70,10 @@ const sourceConfigs: Record<Exclude<InboxSource, null>, SourceIconConfig> = {
   sendblue: {
     icon: Icons.IMessage,
     tooltip: "Shared via iMessage",
+  },
+  discord: {
+    icon: Icons.Discord,
+    tooltip: "Shared via Discord",
   },
 };
 

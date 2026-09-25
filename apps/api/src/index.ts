@@ -18,6 +18,7 @@ import * as Sentry from "@sentry/bun";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
+import { startDiscordGateway } from "./bot/discord-gateway";
 import { routers } from "./rest/routers";
 import { wellKnownRouter } from "./rest/routers/well-known";
 import type { Context } from "./rest/types";
@@ -448,6 +449,7 @@ process.on("unhandledRejection", (reason, promise) => {
 import { warmToolIndex } from "./chat/tools";
 
 warmToolIndex();
+startDiscordGateway();
 
 export default {
   port: process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000,

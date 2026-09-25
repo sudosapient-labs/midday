@@ -48,6 +48,7 @@ import {
   WhatsAppAlreadyConnectedToAnotherTeamError,
 } from "@midday/db/errors";
 import {
+  addDiscordConnection,
   addTelegramConnection,
   addWhatsAppConnection,
   consumePlatformLinkToken,
@@ -71,6 +72,8 @@ const ALLOWED_ATTACHMENT_HOSTS = new Set([
   "api.telegram.org",
   "lookaside.fbsbx.com",
   "media.sendblue.co",
+  "cdn.discordapp.com",
+  "media.discordapp.net",
 ]);
 
 function isSafeAttachmentUrl(raw: string): boolean {
@@ -100,6 +103,12 @@ export function registerMiddayBotRuntime() {
 
   bot.onNewMention(async (thread, message) => {
     try {
+      await renameNewDiscordThread(thread, message).catch((error) => {
+        logger.warn("Failed to rename Discord thread", {
+          error: error instanceof Error ? error.message : String(error),
+          threadId: thread?.id,
+        });
+      });
       await thread.subscribe().catch(() => {});
       await handleIncomingMessage(thread, message);
     } catch (error) {
@@ -107,6 +116,7 @@ export function registerMiddayBotRuntime() {
         error: error instanceof Error ? error.message : String(error),
         threadId: thread?.id,
       });
+      await postBotFailure(thread);
     }
   });
 
@@ -118,6 +128,7 @@ export function registerMiddayBotRuntime() {
         error: error instanceof Error ? error.message : String(error),
         threadId: thread?.id,
       });
+      await postBotFailure(thread);
     }
   });
 
@@ -146,6 +157,14 @@ export function registerMiddayBotRuntime() {
   });
 }
 
+async function postBotFailure(thread: Thread<BotThreadState>) {
+  await thread
+    .post(
+      "I received your message, but the Midday assistant is temporarily unavailable. Please try again shortly.",
+    )
+    .catch(() => {});
+}
+
 async function handleIncomingMessage(
   thread: Thread<BotThreadState>,
   message: Message,
@@ -156,6 +175,10 @@ async function handleIncomingMessage(
 
   const platform = normalizePlatform(thread.adapter.name);
   if (!platform) {
+    return;
+  }
+
+  if (platform === "discord" && !isAllowedDiscordChannel(thread)) {
     return;
   }
 
@@ -279,7 +302,19 @@ async function handleIncomingMessage(
   });
 
   try {
-    await thread.post(result.fullStream);
+    if (platform === "discord") {
+      // Discord's fallback streaming implementation attempts to edit the
+      // placeholder for tool/reasoning chunks that contain no visible text.
+      // Discord rejects those empty edits and leaves the placeholder behind,
+      // so wait for the completed answer and post it once instead.
+      const responseText = (await result.text).trim();
+      await thread.post(
+        responseText ||
+          "I couldn't generate a response for that request. Please try again.",
+      );
+    } else {
+      await thread.post(result.fullStream);
+    }
   } finally {
     await result.cleanup();
   }
@@ -309,7 +344,8 @@ async function resolveConversation(
     platform === "slack" ||
     platform === "telegram" ||
     platform === "whatsapp" ||
-    platform === "sendblue"
+    platform === "sendblue" ||
+    platform === "discord"
       ? !!extractConnectionToken(platform, message?.text)
       : false;
 
@@ -340,6 +376,10 @@ async function resolveConversation(
     return resolveSendblueConversation(thread, message);
   }
 
+  if (platform === "discord") {
+    return resolveDiscordConversation(thread, message);
+  }
+
   return null;
 }
 
@@ -355,7 +395,8 @@ async function hydrateResolvedConversationIdentity(params: {
     platform !== "slack" &&
     platform !== "telegram" &&
     platform !== "whatsapp" &&
-    platform !== "sendblue"
+    platform !== "sendblue" &&
+    platform !== "discord"
   ) {
     return null;
   }
@@ -368,7 +409,12 @@ async function hydrateResolvedConversationIdentity(params: {
   const identity = await getPlatformIdentity(db, {
     provider: platform,
     externalUserId,
-    externalTeamId: platform === "slack" ? getSlackTeamId(message) : undefined,
+    externalTeamId:
+      platform === "slack"
+        ? getSlackTeamId(message)
+        : platform === "discord"
+          ? getDiscordGuildId(thread)
+          : undefined,
   });
 
   const connectedConversation = requireResolvedConversationIdentity(
@@ -404,6 +450,10 @@ async function hydrateResolvedConversationIdentity(params: {
     if (!app?.teamId || app.teamId !== connectedConversation.teamId) {
       return null;
     }
+  }
+
+  if (platform === "discord" && !isAllowedDiscordChannel(thread)) {
+    return null;
   }
 
   return connectedConversation;
@@ -477,6 +527,54 @@ function resolveSendblueConversation(
       "That iMessage link code is invalid or expired. Open Midday and generate a new one.",
     promptConnectMessage:
       "Connect iMessage from Midday first, then send the connection code here.",
+  });
+}
+
+function resolveDiscordConversation(
+  thread: Thread<BotThreadState>,
+  message: Message,
+) {
+  return resolvePlatformLinkCode(thread, message, {
+    provider: "discord",
+    displayName: "Discord account",
+    getExternalTeamId: ({ thread: currentThread }) =>
+      getDiscordGuildId(currentThread),
+    buildIdentityFields: ({ message: msg, thread: currentThread }) => ({
+      externalTeamId: getDiscordGuildId(currentThread),
+      externalChannelId: getDiscordChannelId(currentThread),
+      metadata: {
+        displayName:
+          msg?.author?.fullName || msg?.author?.userName || undefined,
+        guildId: getDiscordGuildId(currentThread),
+        channelId: getDiscordChannelId(currentThread),
+      },
+    }),
+    afterConnect: async ({
+      token,
+      externalUserId,
+      message: msg,
+      thread: t,
+    }) => {
+      const app = await addDiscordConnection(db, {
+        teamId: token.teamId,
+        userId: externalUserId,
+        guildId: getDiscordGuildId(t),
+        channelId: getDiscordChannelId(t),
+        username: msg?.author?.userName || undefined,
+        displayName:
+          msg?.author?.fullName || msg?.author?.userName || undefined,
+        createdBy: token.userId,
+      });
+
+      if (!app) {
+        throw new PlatformSetupFailedError();
+      }
+    },
+    welcomeMessage: (name) => buildWelcomeMessage(name, "discord"),
+    invalidCodeMessage:
+      "That Discord link code is invalid or expired. Open Midday and generate a new one.",
+    promptConnectMessage:
+      "Open Midday, generate a Discord connection code, and send `Connect to Midday: CODE` here.",
   });
 }
 
@@ -815,11 +913,160 @@ function getSlackTeamId(message: Message) {
   return raw?.team || raw?.team_id || raw?.teamId;
 }
 
+function getDiscordThreadParts(thread: Thread<BotThreadState>) {
+  // `chat` exposes `thread.channelId` as the second segment of a thread ID.
+  // For Discord that segment is the guild ID, so use the complete thread ID
+  // to retain both the guild and the originating channel.
+  const threadParts = thread.id.split(":");
+  if (threadParts[0] === "discord") {
+    return {
+      guildId: threadParts[1] || undefined,
+      channelId: threadParts[2] || undefined,
+    };
+  }
+
+  // Keep compatibility with adapter mocks that expose the complete value as
+  // `channelId` rather than `id`.
+  const channelParts = thread.channelId.split(":");
+  return channelParts[0] === "discord"
+    ? {
+        guildId: channelParts[1] || undefined,
+        channelId: channelParts[2] || undefined,
+      }
+    : { guildId: undefined, channelId: undefined };
+}
+
+export function buildDiscordThreadName(
+  text: string | undefined,
+  applicationId = process.env.DISCORD_APPLICATION_ID,
+) {
+  let name = text?.trim() ?? "";
+
+  if (applicationId) {
+    name = name.replaceAll(`<@${applicationId}>`, " ");
+    name = name.replaceAll(`<@!${applicationId}>`, " ");
+  }
+
+  name = name
+    .replace(/^(?:<@(?:!|&)?\d+>\s*)+/u, "")
+    .replace(/\s+/gu, " ")
+    .replace(/^[\s,:;|—-]+/u, "")
+    .trim();
+
+  // Do not expose a one-time connection token in the Discord thread title.
+  if (/^connect\s+to\s+midday\s*:\s*[a-z0-9]{8}$/iu.test(name)) {
+    return "Connect to Midday";
+  }
+
+  if (!/[\p{L}\p{N}]/u.test(name)) {
+    return "Midday conversation";
+  }
+
+  if (/\b(?:tdy|today)\b.*\b(?:spent|spending|expenses?)\b/iu.test(name)) {
+    const amounts = Array.from(name.matchAll(/(?:^|\s)(\d+(?:\.\d{1,2})?)(?=\s|$|[-–—])/gu),
+      (match) => Number(match[1]),
+    ).filter(Number.isFinite);
+
+    if (amounts.length > 0) {
+      const total = amounts.reduce((sum, amount) => sum + amount, 0);
+      return `Today's spending — ${amounts.length} expenses, ${total.toLocaleString("en-US", { maximumFractionDigits: 2 })} total`;
+    }
+
+    return "Today's spending";
+  }
+
+  if (/\bbank balance\b/iu.test(name)) {
+    return "Bank balance check";
+  }
+
+  const note = name
+    .replace(/^(?:hi|hey|hello)\b[\s,;:!-]*/iu, "")
+    .replace(/^(?:please\s+)?(?:can|could|would)\s+you\s+/iu, "")
+    .replace(/[?.!]+$/u, "")
+    .trim();
+
+  if (!note) {
+    return "Midday conversation";
+  }
+
+  return `${note.charAt(0).toUpperCase()}${note.slice(1)}`.slice(0, 72);
+}
+
+async function renameNewDiscordThread(
+  thread: Thread<BotThreadState>,
+  message: Message,
+) {
+  if (thread.adapter.name !== "discord") {
+    return;
+  }
+
+  const parts = thread.id.split(":");
+  const discordThreadId = parts[0] === "discord" ? parts[3] : undefined;
+
+  // Threads created from a Discord message reuse the starter message ID. This
+  // prevents renaming pre-existing user-created threads when the bot is first
+  // mentioned inside them.
+  if (!discordThreadId || discordThreadId !== message.id) {
+    return;
+  }
+
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) {
+    return;
+  }
+
+  const response = await fetch(
+    `https://discord.com/api/v10/channels/${discordThreadId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bot ${botToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: buildDiscordThreadName(message.text),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Discord rejected the thread rename with status ${response.status}`,
+    );
+  }
+}
+
+function getDiscordGuildId(thread: Thread<BotThreadState>) {
+  return getDiscordThreadParts(thread).guildId;
+}
+
+function getDiscordChannelId(thread: Thread<BotThreadState>) {
+  return getDiscordThreadParts(thread).channelId;
+}
+
+function isAllowedDiscordChannel(thread: Thread<BotThreadState>) {
+  const configuredChannelId = process.env.DISCORD_CHANNEL_ID?.trim();
+  const configuredGuildId = process.env.DISCORD_GUILD_ID?.trim();
+
+  if (!configuredChannelId && !configuredGuildId) {
+    return true;
+  }
+
+  const channelId = getDiscordChannelId(thread);
+  const guildId = getDiscordGuildId(thread);
+
+  return (
+    (!configuredChannelId || channelId === configuredChannelId) &&
+    (!configuredGuildId || guildId === configuredGuildId)
+  );
+}
+
 const SUPPORTED_PLATFORMS = new Set<BotPlatform>([
   "whatsapp",
   "telegram",
   "slack",
   "sendblue",
+  "discord",
 ]);
 
 function normalizePlatform(platformName: string): BotPlatform | null {

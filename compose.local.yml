@@ -20,7 +20,14 @@ x-common-environment: &common-environment
 services:
   redis:
     image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --aof-load-truncated
+      - "yes"
     ports:
       - "6379:6379"
     volumes:
@@ -31,6 +38,7 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+    stop_grace_period: 30s
     networks:
       - supabase
 
@@ -76,6 +84,8 @@ services:
       INSIGHTS_ENABLED: "false"
       DISABLE_UPCOMING_NOTIFICATIONS: "true"
       DISABLE_RECURRING_INVOICES: "true"
+      MIDDAY_DASHBOARD_URL: http://localhost:3001
+      MIDDAY_API_URL: http://localhost:3003
     ports:
       - "3004:8080"
     depends_on:
@@ -100,6 +110,7 @@ services:
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
         NEXT_PUBLIC_URL: http://localhost:3001
         NEXT_PUBLIC_API_URL: http://localhost:3003
+        NEXT_PUBLIC_DISCORD_CHANNEL_URL: ${NEXT_PUBLIC_DISCORD_CHANNEL_URL:-}
         NEXT_PUBLIC_DESKTOP_SCHEME: midday-dev
         NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY}
     env_file:
@@ -110,6 +121,7 @@ services:
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_URL: http://localhost:3001
       NEXT_PUBLIC_API_URL: http://localhost:3003
+      NEXT_PUBLIC_DISCORD_CHANNEL_URL: ${NEXT_PUBLIC_DISCORD_CHANNEL_URL:-}
       NEXT_PUBLIC_DESKTOP_SCHEME: midday-dev
       DEPLOYMENT_MODE: company
     ports:

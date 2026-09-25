@@ -11,6 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { revalidateInbox } from "@/actions/revalidate-action";
 import { AppConnectionToast } from "@/components/app-connection-toast";
+import { ConnectDiscord } from "@/components/inbox/connect-discord";
 import { ConnectGmail } from "@/components/inbox/connect-gmail";
 import { ConnectIMessage } from "@/components/inbox/connect-imessage";
 import { ConnectOutlook } from "@/components/inbox/connect-outlook";
@@ -110,6 +111,7 @@ export function InboxGetStarted() {
                       <ConnectTelegram />
                       <ConnectWhatsApp />
                       <ConnectIMessage />
+                      <ConnectDiscord />
                       {user?.team?.inboxId && (
                         <CopyInput value={getInboxEmail(user.team.inboxId)} />
                       )}

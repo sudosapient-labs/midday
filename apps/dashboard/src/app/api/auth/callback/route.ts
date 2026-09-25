@@ -84,16 +84,30 @@ export async function GET(req: NextRequest) {
     // Explicitly force primary reads for this query -- the user may have
     // just been created and not yet replicated to read replicas.
     const trpcClient = await getTRPCClient({ forcePrimary: true });
-    const user = await trpcClient.user.me.query();
 
-    if (user?.fullName && !user.teamId) {
-      const invites = await trpcClient.team.invitesByEmail.query();
-      if (invites.length > 0) {
-        return NextResponse.redirect(`${origin}/teams`);
+    let user: Awaited<
+      ReturnType<typeof trpcClient.user.me.query>
+    > | null = null;
+    try {
+      user = await trpcClient.user.me.query();
+    } catch {
+      user = null;
+    }
+
+    // Pending invites take priority over creating a company, even if the user
+    // has not set a full name yet (typical for brand-new invitees).
+    if (!user?.teamId) {
+      try {
+        const invites = await trpcClient.team.invitesByEmail.query();
+        if (invites.length > 0) {
+          return NextResponse.redirect(`${origin}/teams`);
+        }
+      } catch {
+        // Fall through if invite lookup fails.
       }
     }
 
-    const isOnboarding = !user?.fullName || !user.teamId;
+    const isOnboarding = !user?.fullName || !user?.teamId;
     const analytics = await setupAnalytics();
 
     analytics.track({

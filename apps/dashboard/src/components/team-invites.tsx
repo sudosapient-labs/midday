@@ -11,10 +11,12 @@ export function TeamInvites() {
   );
 
   return (
-    <div className="mt-4">
-      <span className="text-sm text-[#878787] mb-4">Invitations</span>
+    <div>
+      <span className="text-sm text-[#878787] mb-4 block">
+        Pending invitations
+      </span>
 
-      <div className="mt-6 space-y-4">
+      <div className="mt-4 space-y-4">
         {invites.map((invite) => (
           <TeamInvite key={invite.id} invite={invite} />
         ))}

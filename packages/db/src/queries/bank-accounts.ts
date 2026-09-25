@@ -2,7 +2,7 @@ import {
   CASH_ACCOUNT_TYPES,
   CREDIT_ACCOUNT_TYPE,
 } from "@midday/banking/account";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { Database } from "../client";
 import { bankAccounts, teams } from "../schema";
@@ -156,11 +156,33 @@ type GetBankAccountBalanceResponse = {
 };
 
 export async function getBankAccountsBalances(db: Database, teamId: string) {
-  const result: GetBankAccountBalanceResponse[] = await db.executeOnReplica(
-    sql`SELECT * FROM get_team_bank_accounts_balances(${teamId})`,
-  );
+  const accounts = await db.query.bankAccounts.findMany({
+    columns: {
+      id: true,
+      currency: true,
+      balance: true,
+      name: true,
+    },
+    with: {
+      bankConnection: {
+        columns: {
+          logoUrl: true,
+        },
+      },
+    },
+    where: and(eq(bankAccounts.teamId, teamId), eq(bankAccounts.enabled, true)),
+    orderBy: [asc(bankAccounts.createdAt), desc(bankAccounts.name)],
+  });
 
-  return result;
+  return accounts.map(
+    (account): GetBankAccountBalanceResponse => ({
+      id: account.id,
+      currency: account.currency ?? "",
+      balance: Number(account.balance) || 0,
+      name: account.name ?? "Unknown Account",
+      logo_url: account.bankConnection?.logoUrl ?? "",
+    }),
+  );
 }
 
 type GetBankAccountsCurrenciesResponse = {
@@ -168,11 +190,22 @@ type GetBankAccountsCurrenciesResponse = {
 };
 
 export async function getBankAccountsCurrencies(db: Database, teamId: string) {
-  const result: GetBankAccountsCurrenciesResponse[] = await db.executeOnReplica(
-    sql`SELECT * FROM get_bank_account_currencies(${teamId})`,
-  );
+  const result = await db
+    .selectDistinct({ currency: bankAccounts.currency })
+    .from(bankAccounts)
+    .where(
+      and(
+        eq(bankAccounts.teamId, teamId),
+        eq(bankAccounts.enabled, true),
+        isNotNull(bankAccounts.currency),
+      ),
+    )
+    .orderBy(asc(bankAccounts.currency));
 
-  return result;
+  return result.filter(
+    (row): row is GetBankAccountsCurrenciesResponse =>
+      typeof row.currency === "string",
+  );
 }
 
 export type GetCashBalanceParams = {

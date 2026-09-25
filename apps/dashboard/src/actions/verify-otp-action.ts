@@ -69,21 +69,43 @@ export const verifyOtpAction = actionClient
     });
 
     const trpcClient = await getTRPCClient({ forcePrimary: true });
-    const user = await trpcClient.user.me.query();
 
-    if (user?.fullName && !user.teamId) {
-      const invites = await trpcClient.team.invitesByEmail.query();
-      if (invites.length > 0) {
-        redirect(`${getUrl()}/teams`);
+    // Brand-new OTP users may still be materializing in the users table.
+    let user: Awaited<ReturnType<typeof trpcClient.user.me.query>> | undefined;
+    try {
+      user = await trpcClient.user.me.query();
+    } catch {
+      user = undefined;
+    }
+
+    // Pending invites always come first for users without a team — including
+    // brand-new accounts that only exist after this OTP verification.
+    // Invite lookup uses JWT/top-level email (or users.email fallback), so the
+    // email used for this OTP must match the invited address.
+    if (!user?.teamId) {
+      try {
+        const invites = await trpcClient.team.invitesByEmail.query();
+        if (invites.length > 0) {
+          redirect(`${getUrl()}/teams`);
+        }
+      } catch {
+        // Invite lookup failed; fall through to onboarding / redirectTo.
       }
+    }
+
+    // Also honor explicit return_to=/teams (e.g. invite email → login).
+    const normalizedRedirectPath = normalizeRedirectPath(redirectTo);
+    const safeRedirectPath = sanitizeRedirectPath(normalizedRedirectPath);
+    if (
+      !user?.teamId &&
+      (safeRedirectPath === "/teams" || safeRedirectPath.startsWith("/teams/"))
+    ) {
+      redirect(new URL(safeRedirectPath, getUrl()).toString());
     }
 
     if (!user?.fullName || !user?.teamId) {
       redirect(`${getUrl()}/onboarding`);
     }
-
-    const normalizedRedirectPath = normalizeRedirectPath(redirectTo);
-    const safeRedirectPath = sanitizeRedirectPath(normalizedRedirectPath);
 
     redirect(new URL(safeRedirectPath, getUrl()).toString());
   });

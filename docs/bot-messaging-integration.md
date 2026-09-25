@@ -1,8 +1,25 @@
-# Bot & Messaging Integration (Telegram, WhatsApp, Slack)
+# Bot & Messaging Integration (Discord, Telegram, WhatsApp, Slack)
 
 ## Overview
 
-The bot integration extends Midday into external messaging platforms — Telegram, WhatsApp, and Slack — so users can chat with the Midday AI assistant, submit receipts/invoices, and receive proactive notifications without opening the dashboard.
+The bot integration extends Midday into external messaging platforms — Discord, Telegram, WhatsApp, and Slack — so users can chat with the Midday AI assistant, submit receipts/invoices, and receive proactive notifications without opening the dashboard.
+
+## Discord setup
+
+Configure a Discord application with the `bot` and `applications.commands`
+scopes. Enable the Message Content intent, invite the bot to the selected
+server, and grant it permissions to read history, send messages, send messages
+in threads, create public threads, add reactions, and attach files.
+
+Set the Interactions Endpoint URL to:
+
+`https://<public-api-host>/webhook/discord`
+
+The API must have `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`,
+`DISCORD_APPLICATION_ID`, `DISCORD_GUILD_ID`, and `DISCORD_CHANNEL_ID` set.
+The final two values restrict both Gateway traffic and linked accounts to the
+approved Discord server and channel. Set `NEXT_PUBLIC_DISCORD_CHANNEL_URL` at
+dashboard build time to expose the connection dialog in Midday.
 
 The system is built around three pillars:
 

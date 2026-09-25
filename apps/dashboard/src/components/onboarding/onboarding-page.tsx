@@ -310,10 +310,24 @@ export function OnboardingPage({
     nextStep();
   }, [nextStep]);
 
-  const handleNameSet = useCallback(() => {
+  const handleNameSet = useCallback(async () => {
     setHasFullName(true);
+
+    // After profile setup, prefer joining a pending invite over creating a company.
+    try {
+      const invites = await queryClient.fetchQuery(
+        trpc.team.invitesByEmail.queryOptions(),
+      );
+      if (invites.length > 0) {
+        router.push("/teams");
+        return;
+      }
+    } catch {
+      // Fall through to create-company if invite lookup fails.
+    }
+
     nextStep();
-  }, [nextStep]);
+  }, [nextStep, queryClient, router, trpc.team.invitesByEmail]);
 
   const handleLoadingChange = useCallback((loading: boolean) => {
     setIsSubmitting(loading);

@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type {
   AppConfigFor,
+  DiscordConnection,
   TelegramConnection,
   WhatsAppConnection,
 } from "../app-config";
@@ -169,7 +170,12 @@ export const disconnectApp = async (
 ) => {
   const { appId, teamId } = params;
 
-  if (appId === "slack" || appId === "telegram" || appId === "whatsapp") {
+  if (
+    appId === "slack" ||
+    appId === "telegram" ||
+    appId === "whatsapp" ||
+    appId === "discord"
+  ) {
     await db
       .delete(platformIdentities)
       .where(
@@ -577,6 +583,94 @@ export const getTelegramConnections = async (db: Database, teamId: string) => {
 
   const config = app.config ?? {};
   return config.connections || [];
+};
+
+export type AddDiscordConnectionParams = {
+  teamId: string;
+  userId: string;
+  guildId?: string;
+  channelId?: string;
+  username?: string;
+  displayName?: string;
+  createdBy?: string;
+};
+
+/**
+ * Record a Discord member's connection to a Midday team. Platform identity
+ * checks enforce cross-team ownership; the app record exposes connection and
+ * notification settings in the dashboard.
+ */
+export const addDiscordConnection = async (
+  db: Database,
+  params: AddDiscordConnectionParams,
+) => {
+  const {
+    teamId,
+    userId,
+    guildId,
+    channelId,
+    username,
+    displayName,
+    createdBy: linkingUserId,
+  } = params;
+
+  const newConnection: DiscordConnection = {
+    userId,
+    guildId,
+    channelId,
+    username,
+    displayName,
+    connectedAt: new Date().toISOString(),
+  };
+
+  const existingApp = await getAppByAppId(db, { appId: "discord", teamId });
+
+  if (existingApp) {
+    const config = existingApp.config ?? {};
+    const connections = config.connections ?? [];
+    const updatedConnections = [
+      ...connections.filter(
+        (connection) =>
+          connection.userId !== userId || connection.guildId !== guildId,
+      ),
+      newConnection,
+    ];
+
+    const [result] = await db
+      .update(apps)
+      .set({
+        config: { ...config, connections: updatedConnections },
+      })
+      .where(and(eq(apps.appId, "discord"), eq(apps.teamId, teamId)))
+      .returning();
+
+    return result as AppRecord<"discord"> | undefined;
+  }
+
+  const firstMember = await db
+    .select({ userId: usersOnTeam.userId })
+    .from(usersOnTeam)
+    .where(eq(usersOnTeam.teamId, teamId))
+    .limit(1);
+
+  const createdBy = linkingUserId || firstMember[0]?.userId || teamId;
+
+  const [result] = await db
+    .insert(apps)
+    .values({
+      teamId,
+      appId: "discord",
+      createdBy,
+      config: { connections: [newConnection] },
+      settings: [
+        { id: "transactions", label: "Transaction updates", value: true },
+        { id: "matches", label: "Match notifications", value: true },
+        { id: "invoices", label: "Invoice updates", value: true },
+      ],
+    })
+    .returning();
+
+  return result as AppRecord<"discord">;
 };
 
 export type UpdateAppTokensParams = {

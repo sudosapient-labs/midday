@@ -27,8 +27,6 @@ interface Props {
   locale: string;
 }
 
-const baseAppUrl = getAppUrl();
-
 export const InviteEmail = ({
   invitedByEmail = "bukinoshita@example.com",
   invitedByName = "Pontus Abrahamsson",
@@ -38,7 +36,9 @@ export const InviteEmail = ({
   locale = "en",
 }: Props) => {
   const { t } = getI18n({ locale });
-  const inviteLink = `${baseAppUrl}/teams`;
+  // Resolve at render time so deploy env (MIDDAY_DASHBOARD_URL / MIDDAY_PUBLIC_DASHBOARD_URL)
+  // is picked up instead of a module-load fallback to app.midday.ai.
+  const inviteLink = `${getAppUrl()}/teams`;
   const themeClasses = getEmailThemeClasses();
   const lightStyles = getEmailInlineStyles("light");
 

@@ -26,7 +26,7 @@ import {
 } from "@midday/db/queries";
 import type { Message, Thread } from "chat";
 
-type LinkablePlatform = "whatsapp" | "telegram" | "sendblue";
+type LinkablePlatform = "whatsapp" | "telegram" | "sendblue" | "discord";
 
 export class PlatformSetupFailedError extends Error {
   constructor() {
@@ -47,8 +47,13 @@ type PlatformResolverConfig = {
     thread: Thread<BotThreadState>;
   }) => {
     externalChannelId?: string;
+    externalTeamId?: string;
     metadata: Record<string, unknown>;
   };
+  getExternalTeamId?: (params: {
+    message: Message;
+    thread: Thread<BotThreadState>;
+  }) => string | undefined;
   afterConnect?: (params: {
     token: { teamId: string; userId: string };
     externalUserId: string;
@@ -109,6 +114,7 @@ export async function resolvePlatformLinkCode(
           teamId: token.teamId,
           userId: token.userId,
           externalUserId,
+          externalTeamId: identityFields.externalTeamId,
           externalChannelId: identityFields.externalChannelId,
           metadata: identityFields.metadata,
         });
@@ -159,6 +165,7 @@ export async function resolvePlatformLinkCode(
     thread,
     config.provider,
     externalUserId,
+    { externalTeamId: config.getExternalTeamId?.({ message, thread }) },
   );
   if (existing) {
     return existing;
@@ -288,5 +295,13 @@ const WELCOME_CONFIGS: Record<
     notifications: "new transactions, invoices, and match suggestions",
     settingsLabel: "Slack",
     callToAction: "Try asking \u201cWhat's my cash flow this month?\u201d",
+  },
+  discord: {
+    capabilities:
+      "You can chat with Midday, send receipts and PDFs, or create invoices \u2014 all from Discord.",
+    notifications: "new transactions, invoices, and receipt matches",
+    settingsLabel: "Discord",
+    callToAction:
+      "Mention Midday in the configured channel or reply in its thread to get started.",
   },
 };

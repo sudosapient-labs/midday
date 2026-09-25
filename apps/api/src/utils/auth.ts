@@ -11,12 +11,20 @@ export type Session = {
 
 type SupabaseJWTPayload = JWTPayload & {
   role?: string;
+  // Supabase puts email on the top-level JWT claim for email/OTP sign-in.
+  // OAuth providers often also mirror it under user_metadata.
+  email?: string;
   user_metadata?: {
     email?: string;
     full_name?: string;
+    name?: string;
     [key: string]: string | undefined;
   };
 };
+
+function readStringClaim(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
 
 if (!process.env.SUPABASE_URL) {
   throw new Error("SUPABASE_URL is required to verify access tokens");
@@ -55,8 +63,12 @@ function extractSession(payload: JWTPayload): Session | null {
   return {
     user: {
       id: p.sub,
-      email: p.user_metadata?.email,
-      full_name: p.user_metadata?.full_name,
+      // Prefer top-level email (email/OTP magic-link tokens), then metadata.
+      email:
+        readStringClaim(p.email) ?? readStringClaim(p.user_metadata?.email),
+      full_name:
+        readStringClaim(p.user_metadata?.full_name) ??
+        readStringClaim(p.user_metadata?.name),
     },
   };
 }

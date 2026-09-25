@@ -1947,6 +1947,13 @@ export async function createTransaction(
     ...rest
   } = params;
 
+  // Manual transaction inputs define a positive amount as income. Mirror the
+  // dashboard form by assigning the Income category when callers omit one, so
+  // the entry is included in revenue and profit reports immediately. Internal
+  // transfers remain uncategorized and excluded from reports.
+  const resolvedCategorySlug =
+    categorySlug ?? (rest.amount > 0 && !rest.internal ? "income" : undefined);
+
   const result = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(transactions)
@@ -1954,7 +1961,7 @@ export async function createTransaction(
         ...rest,
         teamId,
         bankAccountId,
-        categorySlug,
+        categorySlug: resolvedCategorySlug,
         assignedId,
         method: "other",
         manual: true,
@@ -1999,10 +2006,16 @@ export async function createTransactions(
   params: CreateTransactionParams[],
 ) {
   const transactionsToInsert = params.map(
-    ({ attachments, teamId, ...rest }) => {
+    ({ attachments, teamId, categorySlug, ...rest }) => {
       return {
         ...rest,
         teamId,
+        // The bulk REST/MCP path shares the same positive-is-income contract
+        // as the single-entry form. Do not override an explicit category or an
+        // internal transfer.
+        categorySlug:
+          categorySlug ??
+          (rest.amount > 0 && !rest.internal ? "income" : undefined),
         method: "other" as const,
         manual: true,
         notified: true,

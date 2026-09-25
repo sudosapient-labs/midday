@@ -4,6 +4,7 @@ import { mocks } from "../setup";
 const streamMiddayAssistantMock = mock(() =>
   Promise.resolve({
     fullStream: "assistant reply",
+    text: Promise.resolve("assistant reply"),
     cleanup: () => Promise.resolve(),
   }),
 );
@@ -74,9 +75,50 @@ mock.module("@midday/bot", () => ({
   processInboxUpload: mock(() => Promise.resolve(null)),
 }));
 
-const { registerMiddayBotRuntime } = await import("../../bot/runtime");
+const { buildDiscordThreadName, registerMiddayBotRuntime } = await import(
+  "../../bot/runtime"
+);
 
 registerMiddayBotRuntime();
+
+describe("Discord thread names", () => {
+  test("creates a short note instead of copying the full message", () => {
+    expect(
+      buildDiscordThreadName(
+        "<@1536379070504378452>  hi whats my bank balance",
+        "1536379070504378452",
+      ),
+    ).toBe("Bank balance check");
+  });
+
+  test("summarizes today's expense list", () => {
+    expect(
+      buildDiscordThreadName(
+        "<@1536379070504378452> tdy we spent .\n55 water\n247 - curtains\n250 - travel\n270 - return travel",
+        "1536379070504378452",
+      ),
+    ).toBe("Today's spending — 4 expenses, 822 total");
+  });
+
+  test("does not expose a connection code", () => {
+    expect(
+      buildDiscordThreadName(
+        "<@1536379070504378452> Connect to Midday: abc12345",
+        "1536379070504378452",
+      ),
+    ).toBe("Connect to Midday");
+  });
+
+  test("strips role mentions and falls back for punctuation-only messages", () => {
+    expect(buildDiscordThreadName("<@&1536384768311169147> ..", "bot")).toBe(
+      "Midday conversation",
+    );
+  });
+
+  test("keeps Discord thread names within 100 characters", () => {
+    expect(buildDiscordThreadName("a".repeat(150), "bot")).toHaveLength(72);
+  });
+});
 
 function createLinkedUser() {
   return {
@@ -96,7 +138,7 @@ function createLinkedUser() {
 }
 
 function createThread(
-  platform: "whatsapp" | "telegram" | "slack" | "sendblue",
+  platform: "whatsapp" | "telegram" | "slack" | "sendblue" | "discord",
 ) {
   const posts: string[] = [];
   const sendMediaMessageMock = mock(() => Promise.resolve());
@@ -106,8 +148,12 @@ function createThread(
     sendMediaMessageMock,
     thread: {
       adapter: { name: platform, sendMediaMessage: sendMediaMessageMock },
-      id: `${platform}_thread_123`,
-      channelId: `${platform}_channel_123`,
+      id:
+        platform === "discord"
+          ? "discord:guild_123:channel_123:thread_123"
+          : `${platform}_thread_123`,
+      channelId:
+        platform === "discord" ? "guild_123" : `${platform}_channel_123`,
       isDM: platform === "slack",
       recentMessages: [],
       state: {},
@@ -143,6 +189,7 @@ function primeCommonLinkingMocks() {
   streamMiddayAssistantMock.mockImplementation(() =>
     Promise.resolve({
       fullStream: "assistant reply",
+      text: Promise.resolve("assistant reply"),
       cleanup: () => Promise.resolve(),
     }),
   );
@@ -544,6 +591,69 @@ describe("bot runtime link-code consumption", () => {
     );
     expect(streamMiddayAssistantMock).toHaveBeenCalled();
     expect(thread.startTyping).toHaveBeenCalled();
+  });
+
+  test("connected Discord user receives the completed answer without streaming", async () => {
+    const originalGuildId = process.env.DISCORD_GUILD_ID;
+    const originalChannelId = process.env.DISCORD_CHANNEL_ID;
+    process.env.DISCORD_GUILD_ID = "guild_123";
+    process.env.DISCORD_CHANNEL_ID = "channel_123";
+
+    try {
+      const { posts, thread } = createThread("discord");
+      const message = {
+        id: "message_123",
+        text: "what is my bank balance?",
+        author: {
+          userId: "discord_user_123",
+          fullName: "Discord User",
+          userName: "discord_user",
+        },
+        attachments: [],
+      };
+
+      mocks.consumePlatformLinkToken.mockReset();
+      mocks.consumePlatformLinkToken.mockImplementation(() =>
+        Promise.resolve(null),
+      );
+
+      mocks.getPlatformIdentity.mockReset();
+      mocks.getPlatformIdentity.mockImplementation(() =>
+        Promise.resolve({
+          id: "identity_123",
+          teamId: "team_123",
+          userId: "user_123",
+          metadata: null,
+        }),
+      );
+
+      const cleanup = mock(() => Promise.resolve());
+      streamMiddayAssistantMock.mockReset();
+      streamMiddayAssistantMock.mockImplementation(() =>
+        Promise.resolve({
+          fullStream: "unused streaming response",
+          text: Promise.resolve("Your bank balance is $12,345."),
+          cleanup,
+        }),
+      );
+
+      await subscribedMessageHandler?.(thread, message);
+
+      expect(posts).toEqual(["Your bank balance is $12,345."]);
+      expect(cleanup).toHaveBeenCalled();
+    } finally {
+      if (originalGuildId === undefined) {
+        delete process.env.DISCORD_GUILD_ID;
+      } else {
+        process.env.DISCORD_GUILD_ID = originalGuildId;
+      }
+
+      if (originalChannelId === undefined) {
+        delete process.env.DISCORD_CHANNEL_ID;
+      } else {
+        process.env.DISCORD_CHANNEL_ID = originalChannelId;
+      }
+    }
   });
 
   test("afterConnect failure does not leave an orphaned identity (WhatsApp)", async () => {

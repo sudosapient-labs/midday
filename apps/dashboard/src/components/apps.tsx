@@ -11,6 +11,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { AppConnectionToast } from "@/components/app-connection-toast";
+import { ConnectDiscord } from "@/components/inbox/connect-discord";
 import { ConnectIMessage } from "@/components/inbox/connect-imessage";
 import { ConnectTelegram } from "@/components/inbox/connect-telegram";
 import { ConnectWhatsApp } from "@/components/inbox/connect-whatsapp";
@@ -281,6 +282,7 @@ export function Apps() {
       <ConnectWhatsApp showTrigger={false} />
       <ConnectTelegram showTrigger={false} />
       <ConnectIMessage showTrigger={false} />
+      <ConnectDiscord showTrigger={false} />
     </>
   );
 }

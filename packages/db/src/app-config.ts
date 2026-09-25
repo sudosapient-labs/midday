@@ -33,6 +33,19 @@ export type TelegramAppConfig = {
   connections?: TelegramConnection[];
 };
 
+export type DiscordConnection = {
+  userId: string;
+  guildId?: string;
+  channelId?: string;
+  username?: string;
+  displayName?: string;
+  connectedAt: string;
+};
+
+export type DiscordAppConfig = {
+  connections?: DiscordConnection[];
+};
+
 export type XeroAppConfig = {
   provider: "xero";
   accessToken: string;
@@ -65,6 +78,7 @@ export type FortnoxAppConfig = {
 
 export type AppConfigById = {
   slack: SlackAppConfig;
+  discord: DiscordAppConfig;
   telegram: TelegramAppConfig;
   whatsapp: WhatsAppAppConfig;
   xero: XeroAppConfig;

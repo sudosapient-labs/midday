@@ -15,8 +15,9 @@ import {
 import { Input } from "@midday/ui/input";
 import { useToast } from "@midday/ui/use-toast";
 import { getDefaultFiscalYearStartMonth } from "@midday/utils";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { use, useEffect, useRef, useState } from "react";
 import { z } from "zod/v3";
 import { CountrySelector } from "@/components/country-selector";
@@ -86,6 +87,12 @@ export function CreateTeamStep({
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const isSubmittedRef = useRef(false);
+
+  // Safety net: if the user still has pending invites, offer join before create.
+  const { data: pendingInvites } = useQuery(
+    trpc.team.invitesByEmail.queryOptions(),
+  );
+  const hasPendingInvites = (pendingInvites?.length ?? 0) > 0;
 
   const createTeamMutation = useMutation(
     trpc.team.create.mutationOptions({
@@ -188,6 +195,25 @@ export function CreateTeamStep({
         Add company details so amounts, currency, tax, and reporting periods
         line up correctly across insights, invoices and exports.
       </motion.p>
+
+      {hasPendingInvites && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.25 }}
+          className="rounded-md border border-border bg-secondary/40 px-3 py-3 text-sm"
+        >
+          <p className="text-foreground">
+            You have a pending company invitation.
+          </p>
+          <Link
+            href="/teams"
+            className="mt-1 inline-block text-sm text-primary underline underline-offset-4"
+          >
+            Join a company instead
+          </Link>
+        </motion.div>
+      )}
 
       <motion.div
         initial={{ opacity: 0 }}

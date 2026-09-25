@@ -203,6 +203,7 @@ const DOMAIN_ALIASES: Record<string, string[]> = {
   edit: ["update"],
   email: ["send"],
   expense: ["transaction", "report"],
+  expenses: ["transaction", "report"],
   file: ["document", "inbox"],
   find: ["list", "get", "search"],
   income: ["transaction", "report", "revenue"],
@@ -219,6 +220,9 @@ const DOMAIN_ALIASES: Record<string, string[]> = {
   report: ["report"],
   revenue: ["report", "revenue"],
   send: ["send"],
+  spend: ["transaction", "create"],
+  spending: ["transaction", "create"],
+  spent: ["transaction", "create"],
   show: ["list", "get", "summary"],
   tag: ["tag"],
   tax: ["report", "tax"],
@@ -261,6 +265,28 @@ function lexicalTokens(text: string): Set<string> {
   return expanded;
 }
 
+export function getRequiredLexicalTools(query: string): string[] {
+  if (
+    !/\b(?:transactions?|expenses?|spend|spending|spent|payments?)\b/iu.test(
+      query,
+    )
+  ) {
+    return [];
+  }
+
+  return [
+    "bank_accounts_list",
+    "bank_accounts_create",
+    "categories_list",
+    "transactions_list",
+    "transactions_get",
+    "transactions_create",
+    "transactions_create_bulk",
+    "transactions_update",
+    "transactions_update_bulk",
+  ];
+}
+
 function selectToolsLexically(query: string, maxTools: number): string[] {
   const tokens = lexicalTokens(query);
   if (tokens.size === 0) return [];
@@ -284,6 +310,7 @@ function selectToolsLexically(query: string, maxTools: number): string[] {
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 
+  const transactionTools = getRequiredLexicalTools(query);
   const selected = ranked.slice(0, maxTools).map(({ name }) => name);
   const dependencies: string[] = [];
 
@@ -300,20 +327,22 @@ function selectToolsLexically(query: string, maxTools: number): string[] {
     dependencies.push("document_tags_list");
   }
 
-  return [...new Set([...dependencies, ...selected])].slice(0, maxTools);
+  return [
+    ...new Set([...transactionTools, ...dependencies, ...selected]),
+  ].slice(0, maxTools);
 }
 
 /**
  * Select a compact tool set without embeddings. This keeps OpenAI-compatible
  * gateways from receiving the complete MCP catalog on every streamed turn.
  */
-export function buildLexicalPrepareStep<T extends Record<string, Tool>>(
-  options: {
-    messages: ModelMessage[];
-    maxTools: number;
-    alwaysActive?: string[];
-  },
-): PrepareStepFunction<T> {
+export function buildLexicalPrepareStep<
+  T extends Record<string, Tool>,
+>(options: {
+  messages: ModelMessage[];
+  maxTools: number;
+  alwaysActive?: string[];
+}): PrepareStepFunction<T> {
   const selected = selectToolsLexically(
     modelMessageText(options.messages),
     options.maxTools,

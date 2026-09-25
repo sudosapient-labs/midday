@@ -87,10 +87,16 @@ export const userRouter = createTRPCRouter({
   }),
 
   invites: protectedProcedure.query(async ({ ctx: { db, session } }) => {
-    if (!session.user.email) {
+    let email = session.user.email;
+    if (!email) {
+      const user = await getUserById(db, session.user.id);
+      email = user?.email ?? undefined;
+    }
+
+    if (!email) {
       return [];
     }
 
-    return getUserInvites(db, session.user.email);
+    return getUserInvites(db, email);
   }),
 });

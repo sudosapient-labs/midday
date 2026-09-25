@@ -1,8 +1,10 @@
 import {
+  createBankAccountSchema,
   getBankAccountDetailsSchema,
   getBankAccountsSchema,
 } from "@api/schemas/bank-accounts";
 import {
+  createBankAccount,
   getBankAccountDetails,
   getBankAccounts,
   getBankAccountsBalances,
@@ -17,11 +19,16 @@ import {
   sanitize,
   sanitizeArray,
 } from "../schemas";
-import { hasScope, READ_ONLY_ANNOTATIONS, type RegisterTools } from "../types";
+import {
+  hasScope,
+  READ_ONLY_ANNOTATIONS,
+  type RegisterTools,
+  WRITE_ANNOTATIONS,
+} from "../types";
 import { withErrorHandling } from "../utils";
 
 export const registerBankAccountTools: RegisterTools = (server, ctx) => {
-  const { db, teamId } = ctx;
+  const { db, teamId, userId } = ctx;
 
   if (!hasScope(ctx, "bank-accounts.read")) {
     return;
@@ -54,6 +61,33 @@ export const registerBankAccountTools: RegisterTools = (server, ctx) => {
       };
     }, "Failed to list bank accounts"),
   );
+
+  if (hasScope(ctx, "bank-accounts.write")) {
+    server.registerTool(
+      "bank_accounts_create",
+      {
+        title: "Create Manual Bank Account",
+        description:
+          "Create a manual account for cash or manually entered transactions. Set manual=true. Use only after bank_accounts_list confirms no suitable account exists; this does not connect an external bank.",
+        inputSchema: createBankAccountSchema.shape,
+        annotations: WRITE_ANNOTATIONS,
+      },
+      withErrorHandling(async (params) => {
+        const result = await createBankAccount(db, {
+          ...params,
+          teamId,
+          userId,
+          manual: true,
+        });
+        const clean = sanitize(mcpBankAccountSchema, result);
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(clean) }],
+          structuredContent: { data: clean },
+        };
+      }, "Failed to create manual bank account"),
+    );
+  }
 
   server.registerTool(
     "bank_accounts_balances",

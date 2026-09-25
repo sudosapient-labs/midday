@@ -714,6 +714,11 @@ export const mocks = {
       id: "telegram_app_123",
     }),
   ) as MockFn,
+  addDiscordConnection: mock(() =>
+    Promise.resolve({
+      id: "discord_app_123",
+    }),
+  ) as MockFn,
   addWhatsAppConnection: mock(() =>
     Promise.resolve({
       id: "whatsapp_app_123",
@@ -1073,6 +1078,7 @@ const dbQueriesMock = new Proxy(
     bulkUpdateNotificationSettings: mocks.bulkUpdateNotificationSettings,
 
     // Apps
+    addDiscordConnection: mocks.addDiscordConnection,
     addTelegramConnection: mocks.addTelegramConnection,
     addWhatsAppConnection: mocks.addWhatsAppConnection,
     consumePlatformLinkToken: mocks.consumePlatformLinkToken,

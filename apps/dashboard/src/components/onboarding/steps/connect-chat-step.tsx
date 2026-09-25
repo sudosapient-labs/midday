@@ -7,6 +7,7 @@ import {
   AccordionTrigger,
 } from "@midday/ui/accordion";
 import { motion } from "framer-motion";
+import { ConnectDiscord } from "@/components/inbox/connect-discord";
 import { ConnectIMessage } from "@/components/inbox/connect-imessage";
 import { ConnectSlack } from "@/components/inbox/connect-slack";
 import { ConnectTelegram } from "@/components/inbox/connect-telegram";
@@ -104,6 +105,7 @@ export function ConnectChatStep() {
               <div className="flex flex-col space-y-4">
                 <ConnectSlack />
                 <ConnectTelegram />
+                <ConnectDiscord />
               </div>
             </AccordionContent>
           </AccordionItem>

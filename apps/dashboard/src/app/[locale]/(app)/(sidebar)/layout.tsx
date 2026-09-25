@@ -39,7 +39,8 @@ export default async function Layout({
     redirect("/login");
   }
 
-  if (user.fullName && !user.teamId) {
+  // Prefer joining an existing invite over the "create company" onboarding path.
+  if (!user.teamId) {
     const invites = await queryClient.fetchQuery(
       trpc.team.invitesByEmail.queryOptions(),
     );

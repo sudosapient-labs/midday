@@ -1,6 +1,11 @@
 import type { Message } from "chat";
 
-type SupportedLinkPlatform = "slack" | "telegram" | "whatsapp" | "sendblue";
+type SupportedLinkPlatform =
+  | "slack"
+  | "telegram"
+  | "whatsapp"
+  | "sendblue"
+  | "discord";
 
 const LINK_CODE_CHARS = /^[A-Za-z0-9]{8}$/;
 const MIXED_ALPHANUMERIC = /^(?=.*[0-9])(?=.*[A-Za-z])[A-Za-z0-9]{8}$/;

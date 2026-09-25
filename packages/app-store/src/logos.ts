@@ -6,6 +6,7 @@ export { Logo as ClineMcpLogo } from "./cline-mcp/assets/logo";
 export { Logo as CopilotMcpLogo } from "./copilot-mcp/assets/logo";
 export { Logo as CursorMcpLogo } from "./cursor-mcp/assets/logo";
 export { Logo as DeelLogo } from "./deel/assets/logo";
+export { Logo as DiscordLogo } from "./discord/assets/logo";
 export { Logo as DropboxLogo } from "./dropbox/assets/logo";
 export { Logo as EInvoiceLogo } from "./e-invoice/assets/logo";
 export { Logo as FortnoxLogo } from "./fortnox/assets/logo";

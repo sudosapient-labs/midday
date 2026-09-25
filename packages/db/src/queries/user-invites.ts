@@ -3,8 +3,14 @@ import type { Database } from "../client";
 import { teams, userInvites, users, usersOnTeam } from "../schema";
 
 export async function getUserInvites(db: Database, email: string) {
+  if (!email?.trim()) {
+    return [];
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
   return db.query.userInvites.findMany({
-    where: eq(userInvites.email, email),
+    where: sql`LOWER(${userInvites.email}) = ${normalizedEmail}`,
     with: {
       user: {
         columns: {
@@ -83,10 +89,16 @@ export async function declineTeamInvite(
   params: DeclineTeamInviteParams,
 ) {
   const { id, email } = params;
+  const normalizedEmail = email.trim().toLowerCase();
 
   return db
     .delete(userInvites)
-    .where(and(eq(userInvites.id, id), eq(userInvites.email, email)));
+    .where(
+      and(
+        eq(userInvites.id, id),
+        sql`LOWER(${userInvites.email}) = ${normalizedEmail}`,
+      ),
+    );
 }
 
 export async function getTeamInvites(db: Database, teamId: string) {
@@ -118,8 +130,14 @@ export async function getTeamInvites(db: Database, teamId: string) {
 }
 
 export async function getInvitesByEmail(db: Database, email: string) {
+  if (!email?.trim()) {
+    return [];
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
   return db.query.userInvites.findMany({
-    where: eq(userInvites.email, email),
+    where: sql`LOWER(${userInvites.email}) = ${normalizedEmail}`,
     columns: {
       id: true,
       email: true,
@@ -298,11 +316,12 @@ export async function createTeamInvites(
 
   const results = await Promise.all(
     validInvites.map(async (invite) => {
-      // Insert new invite with conflict handling to prevent race conditions
+      // Insert new invite with conflict handling to prevent race conditions.
+      // Always store a normalized email so login lookups match reliably.
       const [row] = await db
         .insert(userInvites)
         .values({
-          email: invite.email,
+          email: invite.email.trim().toLowerCase(),
           role: invite.role,
           invitedBy: invite.invitedBy,
           teamId: teamId,

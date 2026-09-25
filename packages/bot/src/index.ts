@@ -1,4 +1,5 @@
 export * from "./activity-notifications";
+export * from "./discord-notifications";
 export * from "./inbox-upload";
 export * from "./instance";
 export * from "./platform-rules";

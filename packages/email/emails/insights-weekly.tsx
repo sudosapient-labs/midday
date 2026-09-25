@@ -25,8 +25,6 @@ interface Props {
   audioUrl?: string;
 }
 
-const baseAppUrl = getAppUrl();
-
 export const InsightsWeeklyEmail = ({
   fullName = "",
   periodLabel = "Week 2, 2026",
@@ -40,7 +38,7 @@ export const InsightsWeeklyEmail = ({
   const lightStyles = getEmailInlineStyles("light");
 
   const previewText = `${periodLabel}: ${title.slice(0, 100)}`;
-  const dashboardUrl = `${baseAppUrl}/?insight=${insightId}`;
+  const dashboardUrl = `${getAppUrl()}/?insight=${insightId}`;
 
   return (
     <EmailThemeProvider preview={<Preview>{previewText}</Preview>}>

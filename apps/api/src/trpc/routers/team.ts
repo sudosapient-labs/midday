@@ -125,7 +125,13 @@ export const teamRouter = createTRPCRouter({
   acceptInvite: protectedProcedure
     .input(acceptTeamInviteSchema)
     .mutation(async ({ ctx: { db, session }, input }) => {
-      if (!session.user.email) {
+      let email = session.user.email;
+      if (!email) {
+        const user = await getUserById(db, session.user.id);
+        email = user?.email ?? undefined;
+      }
+
+      if (!email) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Email is required to accept an invite",
@@ -135,16 +141,29 @@ export const teamRouter = createTRPCRouter({
       return acceptTeamInvite(db, {
         id: input.id,
         userId: session.user.id,
-        userEmail: session.user.email,
+        userEmail: email,
       });
     }),
 
   declineInvite: protectedProcedure
     .input(declineTeamInviteSchema)
     .mutation(async ({ ctx: { db, session }, input }) => {
+      let email = session.user.email;
+      if (!email) {
+        const user = await getUserById(db, session.user.id);
+        email = user?.email ?? undefined;
+      }
+
+      if (!email) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Email is required to decline an invite",
+        });
+      }
+
       return declineTeamInvite(db, {
         id: input.id,
-        email: session.user.email!,
+        email,
       });
     }),
 
@@ -312,7 +331,18 @@ export const teamRouter = createTRPCRouter({
   }),
 
   invitesByEmail: protectedProcedure.query(async ({ ctx: { db, session } }) => {
-    return getInvitesByEmail(db, session.user.email!);
+    // Email/OTP JWTs may omit email in metadata; fall back to the users row.
+    let email = session.user.email;
+    if (!email) {
+      const user = await getUserById(db, session.user.id);
+      email = user?.email ?? undefined;
+    }
+
+    if (!email) {
+      return [];
+    }
+
+    return getInvitesByEmail(db, email);
   }),
 
   invite: protectedProcedure

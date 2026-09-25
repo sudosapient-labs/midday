@@ -21,8 +21,6 @@ interface Props {
   teamName: string;
 }
 
-const baseAppUrl = getAppUrl();
-
 export const PaymentIssueEmail = ({
   fullName = "",
   teamName = "Midday",
@@ -31,6 +29,7 @@ export const PaymentIssueEmail = ({
   const previewText = `Your last payment for ${teamName} didn't go through.`;
   const themeClasses = getEmailThemeClasses();
   const lightStyles = getEmailInlineStyles("light");
+  const baseAppUrl = getAppUrl();
 
   return (
     <EmailThemeProvider preview={<Preview>{previewText}</Preview>}>

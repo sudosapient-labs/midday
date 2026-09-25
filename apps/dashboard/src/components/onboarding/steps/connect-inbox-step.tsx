@@ -9,6 +9,7 @@ import {
 } from "@midday/ui/accordion";
 import { motion } from "framer-motion";
 import { CopyInput } from "@/components/copy-input";
+import { ConnectDiscord } from "@/components/inbox/connect-discord";
 import { ConnectGmail } from "@/components/inbox/connect-gmail";
 import { ConnectIMessage } from "@/components/inbox/connect-imessage";
 import { ConnectOutlook } from "@/components/inbox/connect-outlook";
@@ -113,6 +114,7 @@ export function ConnectInboxStep() {
                 <ConnectTelegram />
                 <ConnectWhatsApp />
                 <ConnectIMessage />
+                <ConnectDiscord />
                 {inboxEmail && <CopyInput value={inboxEmail} />}
               </div>
             </AccordionContent>

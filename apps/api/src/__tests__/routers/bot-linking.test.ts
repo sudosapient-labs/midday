@@ -27,6 +27,9 @@ describe("bot link code extraction", () => {
     expect(
       extractConnectionToken("sendblue", "Connect to Midday: abc12345"),
     ).toBe("abc12345");
+    expect(
+      extractConnectionToken("discord", "Connect to Midday: abc12345"),
+    ).toBe("abc12345");
     expect(extractConnectionToken("slack", "Connect to Midday: xyzABCDE")).toBe(
       "xyzABCDE",
     );
@@ -107,6 +110,9 @@ describe("isExplicitConnectionAttempt", () => {
     ).toBe(true);
     expect(
       isExplicitConnectionAttempt("slack", "Connect to Midday: xyzABCDE"),
+    ).toBe(true);
+    expect(
+      isExplicitConnectionAttempt("discord", "connect to midday:abc12345"),
     ).toBe(true);
   });
 

@@ -22,14 +22,12 @@ interface Props {
   appName?: string;
 }
 
-const baseAppUrl = getAppUrl();
-
 export const AppInstalledEmail = ({
   email = "pontus@lostisland.co",
   teamName = "Midday Labs AB",
   appName = "Raycast",
 }: Props) => {
-  const appLink = `${baseAppUrl}/apps`;
+  const appLink = `${getAppUrl()}/apps`;
   const themeClasses = getEmailThemeClasses();
   const lightStyles = getEmailInlineStyles("light");
 

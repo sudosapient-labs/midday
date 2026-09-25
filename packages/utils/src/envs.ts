@@ -1,7 +1,15 @@
 export function getAppUrl() {
-  // Allow explicit override via DASHBOARD_URL env var
-  if (process.env.DASHBOARD_URL) {
-    return process.env.DASHBOARD_URL;
+  // Explicit overrides used across this monorepo / host deploys
+  // DASHBOARD_URL: legacy override
+  // MIDDAY_DASHBOARD_URL: set on API/worker compose services
+  // MIDDAY_PUBLIC_DASHBOARD_URL: set in .env.compose* for public hostnames
+  const override =
+    process.env.DASHBOARD_URL ||
+    process.env.MIDDAY_DASHBOARD_URL ||
+    process.env.MIDDAY_PUBLIC_DASHBOARD_URL;
+
+  if (override) {
+    return override;
   }
 
   // When running in Railway, use RAILWAY_ENVIRONMENT as the source of truth
@@ -38,9 +46,14 @@ export function getCdnUrl() {
 }
 
 export function getApiUrl() {
-  // Allow explicit override via API_URL env var
-  if (process.env.API_URL) {
-    return process.env.API_URL;
+  // Explicit overrides used across this monorepo / host deploys
+  const override =
+    process.env.API_URL ||
+    process.env.MIDDAY_API_URL ||
+    process.env.MIDDAY_PUBLIC_API_URL;
+
+  if (override) {
+    return override;
   }
 
   // When running in Railway, use RAILWAY_ENVIRONMENT as the source of truth

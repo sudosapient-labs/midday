@@ -15,6 +15,7 @@ import {
   updatePlatformIdentityMetadata,
 } from "@midday/db/queries";
 import { createLoggerWithContext } from "@midday/logger";
+import { sendDiscordTextNotification } from "./discord-notifications";
 import { sendSendblueTextNotification } from "./sendblue-notifications";
 import { sendTelegramTextNotification } from "./telegram-notifications";
 import {
@@ -118,7 +119,7 @@ export type NotificationContext = {
   entityType: string;
   entityIds: string[];
   summary: string;
-  sourcePlatform: "slack" | "telegram" | "whatsapp" | "sendblue";
+  sourcePlatform: "slack" | "telegram" | "whatsapp" | "sendblue" | "discord";
   sourceMessageId?: string;
   suggestedPrompts: string[];
   sentAt: string;
@@ -313,6 +314,7 @@ async function queueTeamWideNotification(
     "telegram",
     "whatsapp",
     "sendblue",
+    "discord",
   ] as const) {
     const app = await getAppConfig(db, provider, teamId);
 
@@ -496,6 +498,31 @@ async function sendImmediateMatchNotifications(
       payload,
     });
   }
+
+  if (source === "discord") {
+    const channelId = options?.inboxMeta?.sourceMetadata?.channelId;
+    const externalUserId = options?.inboxMeta?.sourceMetadata?.externalUserId;
+
+    if (!channelId) {
+      return;
+    }
+
+    if (externalUserId) {
+      await sendPlainTextMatchNotification({
+        db,
+        provider: "discord",
+        sendFn: (text) => sendDiscordTextNotification({ channelId, text }),
+        externalUserId,
+        teamId,
+        payload,
+      });
+    } else {
+      await sendDiscordTextNotification({
+        channelId,
+        text: buildPlainMatchText(payload),
+      });
+    }
+  }
 }
 
 async function sendSummaryToIdentity(
@@ -584,6 +611,17 @@ async function sendSummaryToIdentity(
       });
       return true;
     }
+    case "discord": {
+      if (!identity.externalChannelId) {
+        return false;
+      }
+
+      await sendDiscordTextNotification({
+        channelId: identity.externalChannelId,
+        text,
+      });
+      return true;
+    }
   }
 }
 
@@ -606,7 +644,7 @@ export function buildBatchSummary(
   params: {
     teamId: string;
     userId: string;
-    provider: "slack" | "telegram" | "whatsapp" | "sendblue";
+    provider: "slack" | "telegram" | "whatsapp" | "sendblue" | "discord";
   },
 ) {
   const sentAt = new Date().toISOString();
@@ -754,7 +792,7 @@ export function buildBatchSummary(
 function buildMatchContext(
   userId: string,
   teamId: string,
-  provider: "telegram" | "whatsapp" | "sendblue",
+  provider: "telegram" | "whatsapp" | "sendblue" | "discord",
   payload: MatchPayload,
 ): NotificationContext {
   const summary =
@@ -777,7 +815,7 @@ function buildMatchContext(
 
 async function sendPlainTextMatchNotification(params: {
   db: Database;
-  provider: "telegram" | "sendblue";
+  provider: "telegram" | "sendblue" | "discord";
   sendFn: (text: string) => Promise<void>;
   externalUserId: string;
   teamId: string;
@@ -854,7 +892,7 @@ function isSettingEnabled(
 
 async function getAppConfig(
   db: Database,
-  appId: "slack" | "telegram" | "whatsapp" | "sendblue",
+  appId: "slack" | "telegram" | "whatsapp" | "sendblue" | "discord",
   teamId: string,
 ): Promise<AppConfig | null> {
   const app = await getAppByAppId(db, { appId, teamId });

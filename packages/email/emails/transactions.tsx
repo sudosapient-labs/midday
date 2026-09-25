@@ -145,8 +145,6 @@ const defaultTransactions = [
   },
 ];
 
-const baseAppUrl = getAppUrl();
-
 export const TransactionsEmail = ({
   fullName = "",
   transactions = defaultTransactions,
@@ -157,6 +155,7 @@ export const TransactionsEmail = ({
   const firstName = fullName ? fullName.split(" ").at(0) : "";
   const themeClasses = getEmailThemeClasses();
   const lightStyles = getEmailInlineStyles("light");
+  const baseAppUrl = getAppUrl();
 
   const previewText = t("transactions.preview", {
     firstName,
