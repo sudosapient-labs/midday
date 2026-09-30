@@ -15,11 +15,16 @@ Set the Interactions Endpoint URL to:
 
 `https://<public-api-host>/webhook/discord`
 
-The API must have `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`,
-`DISCORD_APPLICATION_ID`, `DISCORD_GUILD_ID`, and `DISCORD_CHANNEL_ID` set.
-The final two values restrict both Gateway traffic and linked accounts to the
-approved Discord server and channel. Set `NEXT_PUBLIC_DISCORD_CHANNEL_URL` at
-dashboard build time to expose the connection dialog in Midday.
+The API must have `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, and
+`DISCORD_APPLICATION_ID` set. The dashboard obtains a Discord OAuth installation
+URL from the authenticated API, so the application ID has one server-side source
+of truth. Users first add the bot to their chosen server, then paste the generated
+Midday connection message in a channel where the bot can read and send messages.
+
+`DISCORD_GUILD_ID` and `DISCORD_CHANNEL_ID` are optional deployment restrictions.
+When set, the API accepts traffic only from that server and channel. Leave them
+unset for the normal multi-server installation flow. `NEXT_PUBLIC_DISCORD_CHANNEL_URL`
+is optional and adds a shortcut to a preconfigured channel after installation.
 
 The system is built around three pillars:
 
@@ -467,6 +472,11 @@ Connected bot users operate with `apis.all` scope, granting full Midday assistan
 | `SLACK_STATE_SECRET` | Yes | State parameter signing secret |
 | `SLACK_SIGNING_SECRET` | Yes | Webhook signature verification |
 | `SLACK_ENCRYPTION_KEY` | Recommended | Encrypt stored Slack installations |
+| `DISCORD_BOT_TOKEN` | Yes | Bot token used for Gateway and REST API access |
+| `DISCORD_PUBLIC_KEY` | Yes | Verify Discord interaction signatures |
+| `DISCORD_APPLICATION_ID` | Yes | Build the server installation URL and register commands |
+| `DISCORD_GUILD_ID` | No | Restrict the bot to one Discord server |
+| `DISCORD_CHANNEL_ID` | No | Restrict the bot to one channel in the allowed server |
 | `TELEGRAM_BOT_TOKEN` | Yes | BotFather token |
 | `TELEGRAM_WEBHOOK_SECRET_TOKEN` | Yes | Webhook verification secret |
 | `TELEGRAM_BOT_USERNAME` | Yes | Bot username (without @) |
@@ -482,6 +492,7 @@ Connected bot users operate with `apis.all` scope, granting full Midday assistan
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `NEXT_PUBLIC_DISCORD_CHANNEL_URL` | No | Shortcut to a preconfigured Discord channel after installation |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Yes | Used in deep links (`t.me/{bot}?start=...`) |
 | `NEXT_PUBLIC_WHATSAPP_NUMBER` | Yes | Used in deep links (`wa.me/{number}?text=...`) |
 

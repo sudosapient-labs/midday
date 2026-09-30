@@ -1,3 +1,4 @@
+import { buildDiscordInstallUrl } from "@api/bot/discord-install";
 import {
   createPlatformLinkTokenSchema,
   disconnectAppSchema,
@@ -19,6 +20,10 @@ export const appsRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx: { db, teamId } }) => {
     return getApps(db, teamId!);
   }),
+
+  discordSetup: protectedProcedure.query(() => ({
+    installUrl: buildDiscordInstallUrl(process.env.DISCORD_APPLICATION_ID),
+  })),
 
   disconnect: protectedProcedure
     .input(disconnectAppSchema)

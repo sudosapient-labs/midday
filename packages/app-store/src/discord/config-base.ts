@@ -10,7 +10,7 @@ export const baseConfig = {
   short_description:
     "Chat with the Midday assistant, upload receipts, and receive financial notifications directly in Discord.",
   description:
-    "Connect your Discord account to Midday and manage your finances from your configured server channel.\n\n**Midday Assistant**\nAsk questions about spending, transactions, invoices, and business performance through a natural Discord conversation.\n\n**Upload Receipts & Invoices**\nSend supported files and images in Discord to add them to your Midday inbox for extraction and matching.\n\n**Financial Notifications**\nReceive updates for transactions, invoices, receipt processing, and document matches.\n\n**Secure Account Linking**\nMidday generates a short-lived connection code that links your Discord user to the current workspace.",
+    "Add Midday to your Discord server, link your account, and manage your finances from a channel where the bot is available.\n\n**Midday Assistant**\nAsk questions about spending, transactions, invoices, and business performance through a natural Discord conversation.\n\n**Upload Receipts & Invoices**\nSend supported files and images in Discord to add them to your Midday inbox for extraction and matching.\n\n**Financial Notifications**\nReceive updates for transactions, invoices, receipt processing, and document matches.\n\n**Secure Account Linking**\nMidday generates a short-lived connection code that links your Discord user and server to the current workspace.",
   settings: [
     {
       id: "transactions",
