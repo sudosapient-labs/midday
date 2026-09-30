@@ -234,6 +234,17 @@ async function handleIncomingMessage(
     return;
   }
 
+  const linkedTeam =
+    (await getTeamById(db, connectedConversation.teamId)) ??
+    (user.team?.id === connectedConversation.teamId ? user.team : null);
+
+  if (!linkedTeam) {
+    await thread.post(
+      "I couldn't resolve the Midday workspace for this connection. Reconnect it from the dashboard and try again.",
+    );
+    return;
+  }
+
   const externalUserId = getMessageAuthorId(message);
   const conversationOwner = {
     teamId: connectedConversation.teamId,
@@ -288,7 +299,7 @@ async function handleIncomingMessage(
     apiUrl: process.env.MIDDAY_API_URL || "https://api.midday.ai",
     timezone: user.timezone ?? "UTC",
     locale: user.locale ?? "en",
-    countryCode: user.team?.countryCode ?? null,
+    countryCode: linkedTeam.countryCode ?? null,
     dateFormat: user.dateFormat ?? null,
     timeFormat: user.timeFormat ?? null,
   };
@@ -300,9 +311,9 @@ async function handleIncomingMessage(
       timezone: user.timezone ?? "UTC",
       dateFormat: user.dateFormat ?? null,
       timeFormat: user.timeFormat ?? 24,
-      baseCurrency: user.team?.baseCurrency ?? "USD",
-      teamName: user.team?.name ?? null,
-      countryCode: user.team?.countryCode ?? null,
+      baseCurrency: linkedTeam.baseCurrency ?? "USD",
+      teamName: linkedTeam.name ?? null,
+      countryCode: linkedTeam.countryCode ?? null,
       localTime: null,
       recentUploadSummaries,
     }) +
