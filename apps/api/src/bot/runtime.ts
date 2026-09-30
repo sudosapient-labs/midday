@@ -184,6 +184,8 @@ async function handleIncomingMessage(
   thread: Thread<BotThreadState>,
   message: Message,
 ) {
+  const turnStartedAt = performance.now();
+
   if (message?.author?.isMe || message?.author?.isBot) {
     return;
   }
@@ -265,6 +267,19 @@ async function handleIncomingMessage(
     externalUserId,
   };
   const persistedThreadState = (await thread.state) ?? {};
+  const existingConversation = getConversationContext(
+    persistedThreadState,
+    conversationOwner,
+  );
+
+  logger.info("[bot] Conversation turn started", {
+    platform,
+    threadId: thread.id,
+    messageId: message.id,
+    teamId: connectedConversation.teamId,
+    actingUserId: connectedConversation.actingUserId,
+    persistedMessageCount: existingConversation?.messages.length ?? 0,
+  });
 
   // Gateway and webhook retries can deliver the same message more than once.
   // A completed exchange is the idempotency boundary: ignore the retry rather
@@ -277,6 +292,12 @@ async function handleIncomingMessage(
       message.id,
     )
   ) {
+    logger.info("[bot] Ignoring completed message retry", {
+      platform,
+      threadId: thread.id,
+      messageId: message.id,
+      teamId: connectedConversation.teamId,
+    });
     return;
   }
 
@@ -337,10 +358,7 @@ async function handleIncomingMessage(
         )}`
       : "");
 
-  const persistedContext = getConversationContext(
-    persistedThreadState,
-    conversationOwner,
-  );
+  const persistedContext = existingConversation;
   let modelMessages: Array<ModelMessage>;
 
   if (persistedContext || platform === "discord") {
@@ -410,6 +428,16 @@ async function handleIncomingMessage(
       }),
     });
   }
+
+  logger.info("[bot] Conversation turn completed", {
+    platform,
+    threadId: thread.id,
+    messageId: message.id,
+    teamId: connectedConversation.teamId,
+    durationMs: Math.round(performance.now() - turnStartedAt),
+    responseLength: completedResponseText.length,
+    persistedToolContext: Boolean(completedToolContext),
+  });
 
   if (
     connectedConversation.identityId &&
