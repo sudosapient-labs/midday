@@ -942,7 +942,10 @@ async function processIncomingAttachments(params: {
         platform,
         platformMeta: {
           threadId: thread.id,
-          channelId: thread.channelId,
+          channelId:
+            platform === "discord"
+              ? getDiscordDestinationId(thread)
+              : thread.channelId,
           messageId: message?.id,
           externalUserId: getMessageAuthorId(message),
           actingUserId,
@@ -1055,6 +1058,7 @@ function getDiscordThreadParts(thread: Thread<BotThreadState>) {
     return {
       guildId: threadParts[1] || undefined,
       channelId: threadParts[2] || undefined,
+      threadId: threadParts[3] || undefined,
     };
   }
 
@@ -1065,8 +1069,9 @@ function getDiscordThreadParts(thread: Thread<BotThreadState>) {
     ? {
         guildId: channelParts[1] || undefined,
         channelId: channelParts[2] || undefined,
+        threadId: channelParts[3] || undefined,
       }
-    : { guildId: undefined, channelId: undefined };
+    : { guildId: undefined, channelId: undefined, threadId: undefined };
 }
 
 export function buildDiscordThreadName(
@@ -1176,6 +1181,11 @@ function getDiscordGuildId(thread: Thread<BotThreadState>) {
 
 function getDiscordChannelId(thread: Thread<BotThreadState>) {
   return getDiscordThreadParts(thread).channelId;
+}
+
+function getDiscordDestinationId(thread: Thread<BotThreadState>) {
+  const parts = getDiscordThreadParts(thread);
+  return parts.threadId ?? parts.channelId;
 }
 
 function isAllowedDiscordChannel(thread: Thread<BotThreadState>) {
