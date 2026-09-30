@@ -16,7 +16,6 @@ const Lottie = dynamic(() => import("lottie-react"), {
 });
 
 type Props = {
-  accessToken?: string;
   runId?: string;
   setRunId: (runId?: string) => void;
   onClose: () => void;
@@ -24,7 +23,6 @@ type Props = {
 };
 
 export function LoadingTransactionsEvent({
-  accessToken,
   runId,
   setRunId,
   onClose,
@@ -35,10 +33,7 @@ export function LoadingTransactionsEvent({
   const { resolvedTheme } = useTheme();
   const { setParams } = useConnectParams();
 
-  const { status } = useInitialConnectionStatus({
-    runId,
-    accessToken,
-  });
+  const { status } = useInitialConnectionStatus({ runId });
 
   useEffect(() => {
     if (status === "SYNCING") {

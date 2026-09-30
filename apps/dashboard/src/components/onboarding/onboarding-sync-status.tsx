@@ -9,7 +9,6 @@ import { useInitialConnectionStatus } from "@/hooks/use-initial-connection-statu
 
 export type BankSyncState = {
   runId: string;
-  accessToken: string;
 } | null;
 
 export type InboxSyncState = {
@@ -179,7 +178,6 @@ export function OnboardingSyncStatus({
 
   const { status: bankStatus } = useInitialConnectionStatus({
     runId: isDebug ? undefined : bankSync?.runId,
-    accessToken: isDebug ? undefined : bankSync?.accessToken,
   });
 
   const [debugBankCompleted, setDebugBankCompleted] = useState(false);

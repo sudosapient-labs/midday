@@ -42,12 +42,11 @@ function InboxAccountItem({ account }: { account: InboxAccount }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [runId, setRunId] = useState<string | undefined>();
-  const [accessToken, setAccessToken] = useState<string | undefined>();
   const [isSyncing, setSyncing] = useState(false);
   const { toast, dismiss } = useToast();
   const router = useRouter();
 
-  const { status, setStatus, result } = useSyncStatus({ runId, accessToken });
+  const { status, setStatus, result } = useSyncStatus({ runId });
 
   const syncInboxAccountMutation = useMutation(
     trpc.inboxAccounts.sync.mutationOptions({
@@ -57,7 +56,6 @@ function InboxAccountItem({ account }: { account: InboxAccount }) {
       onSuccess: (data) => {
         if (data) {
           setRunId(data.id);
-          setAccessToken(data.publicAccessToken);
         }
       },
       onError: () => {
@@ -93,7 +91,7 @@ function InboxAccountItem({ account }: { account: InboxAccount }) {
       setSyncing(false);
 
       // Show success toast with attachment count
-      const attachmentCount = result?.attachmentsProcessed || 0;
+      const attachmentCount = Number(result?.attachmentsProcessed ?? 0);
       const description =
         attachmentCount > 0
           ? `Found ${attachmentCount} new ${attachmentCount === 1 ? "attachment" : "attachments"}.`
