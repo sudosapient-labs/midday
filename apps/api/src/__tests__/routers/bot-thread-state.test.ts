@@ -4,6 +4,7 @@ import {
   canReuseCachedThreadState,
   getConversationContext,
   hasProcessedConversationMessage,
+  recordProcessedConversationMessage,
 } from "../../bot/thread-state";
 
 describe("bot thread state reuse", () => {
@@ -157,6 +158,22 @@ describe("persistent bot conversation context", () => {
     expect(
       hasProcessedConversationMessage(
         { conversationContexts: second },
+        owner,
+        "message_1",
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps replay protection independent from trimmed conversation text", () => {
+    const processedMessageIds = recordProcessedConversationMessage(
+      {},
+      owner,
+      "message_1",
+    );
+
+    expect(
+      hasProcessedConversationMessage(
+        { processedMessageIds, conversationContexts: {} },
         owner,
         "message_1",
       ),

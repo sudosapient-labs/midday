@@ -84,6 +84,10 @@ beforeEach(() => {
   assistant.mockClear();
   upload.mockClear();
   mocks.consumePlatformLinkToken.mockClear();
+  mocks.claimBotMessage.mockClear();
+  mocks.claimBotMessage.mockImplementation(async () => true);
+  mocks.completeBotMessage.mockClear();
+  mocks.completeBotMessage.mockImplementation(async () => true);
   mocks.hasTeamAccess.mockImplementation(async () => true);
   mocks.getDiscordInstallation.mockImplementation(async () => ({
     id: "discord-installation-b",
@@ -253,4 +257,50 @@ test("persists task text and verified tool outcomes across follow-up turns", asy
     message("yes, save them", "discord-b", "turn_2"),
   );
   expect(assistant).toHaveBeenCalledTimes(2);
+});
+
+test("records a completed financial turn before Discord delivery", async () => {
+  const currentThread = thread();
+  const current = message("save expense 55 water", "discord-b", "write-1");
+  currentThread.post.mockImplementationOnce(async () => {
+    throw new Error("simulated Discord outage");
+  });
+
+  await subscribed(currentThread, current);
+  expect(mocks.completeBotMessage).toHaveBeenCalled();
+  await subscribed(currentThread, current);
+
+  expect(assistant).toHaveBeenCalledTimes(1);
+});
+
+test("records attachment-only messages independently from conversation text", async () => {
+  const currentThread = thread();
+  const current: any = message("", "discord-b", "attachment-1");
+  current.attachments = [
+    {
+      type: "file",
+      mimeType: "application/pdf",
+      name: "receipt.pdf",
+      data: new Uint8Array([1]),
+    },
+  ];
+
+  await subscribed(currentThread, current);
+  await subscribed(currentThread, current);
+
+  expect(upload).toHaveBeenCalledTimes(1);
+});
+
+test("durable replay protection survives conversation cache eviction", async () => {
+  const currentThread = thread();
+  const current = message("save expense 55 water", "discord-b", "write-2");
+  mocks.claimBotMessage
+    .mockImplementationOnce(async () => true)
+    .mockImplementationOnce(async () => false);
+
+  await subscribed(currentThread, current);
+  currentThread.state = {};
+  await subscribed(currentThread, current);
+
+  expect(assistant).toHaveBeenCalledTimes(1);
 });

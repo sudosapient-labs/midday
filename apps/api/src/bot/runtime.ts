@@ -27,6 +27,7 @@ import {
   canReuseCachedThreadState,
   getConversationContext,
   hasProcessedConversationMessage,
+  recordProcessedConversationMessage,
 } from "@api/bot/thread-state";
 import { streamMiddayAssistant } from "@api/chat/assistant-runtime";
 import { buildSystemPrompt } from "@api/chat/prompt";
@@ -56,6 +57,8 @@ import {
   addDiscordConnection,
   addTelegramConnection,
   addWhatsAppConnection,
+  claimBotMessage,
+  completeBotMessage,
   consumePlatformLinkToken,
   createOrUpdatePlatformIdentity,
   getAppBySlackTeamId,
@@ -303,6 +306,29 @@ async function handleIncomingMessage(
     return;
   }
 
+  const durableMessageKey =
+    platform === "discord" && message.id
+      ? {
+          provider: "discord" as const,
+          teamId: connectedConversation.teamId,
+          userId: connectedConversation.actingUserId,
+          externalTeamId: getDiscordGuildId(thread),
+          threadId: thread.id,
+          externalUserId,
+          messageId: message.id,
+        }
+      : null;
+
+  if (durableMessageKey && !(await claimBotMessage(db, durableMessageKey))) {
+    logger.info("[bot] Ignoring durable message retry", {
+      platform,
+      threadId: thread.id,
+      messageId: message.id,
+      teamId: connectedConversation.teamId,
+    });
+    return;
+  }
+
   await thread.startTyping("Working in Midday...").catch(() => {});
 
   const { summaries: recentUploadSummaries, richMessages: uploadMessages } =
@@ -321,6 +347,19 @@ async function handleIncomingMessage(
 
     const textContent = (message?.text ?? "").trim();
     if (!textContent) {
+      if (message.id) {
+        const latestState = (await thread.state) ?? {};
+        await thread.setState({
+          processedMessageIds: recordProcessedConversationMessage(
+            latestState,
+            conversationOwner,
+            message.id,
+          ),
+        });
+      }
+      if (durableMessageKey) {
+        await completeBotMessage(db, durableMessageKey);
+      }
       return;
     }
   }
@@ -398,6 +437,8 @@ async function handleIncomingMessage(
 
   let completedResponseText = "";
   let completedToolContext = "";
+  let conversationPersisted = false;
+  const userText = normalizeConversationText(platform, message.text ?? "");
   try {
     if (platform === "discord") {
       // Discord's fallback streaming implementation attempts to edit the
@@ -409,6 +450,28 @@ async function handleIncomingMessage(
         completedResponseText =
           "I couldn't generate a response for that request. Please try again.";
       }
+      completedToolContext = await summarizeToolResults(result);
+      if (message.id && userText) {
+        const latestState = (await thread.state) ?? {};
+        await thread.setState({
+          conversationContexts: appendConversationExchange(latestState, {
+            ...conversationOwner,
+            sourceMessageId: message.id,
+            userText,
+            assistantText: completedResponseText,
+            toolContext: completedToolContext,
+          }),
+          processedMessageIds: recordProcessedConversationMessage(
+            latestState,
+            conversationOwner,
+            message.id,
+          ),
+        });
+        conversationPersisted = true;
+      }
+      if (durableMessageKey) {
+        await completeBotMessage(db, durableMessageKey);
+      }
       for (const chunk of splitDiscordText(completedResponseText)) {
         await thread.post(chunk);
       }
@@ -416,13 +479,19 @@ async function handleIncomingMessage(
       await thread.post(result.fullStream);
       completedResponseText = (await result.text).trim();
     }
-    completedToolContext = await summarizeToolResults(result);
+    if (!completedToolContext) {
+      completedToolContext = await summarizeToolResults(result);
+    }
   } finally {
     await result.cleanup();
   }
 
-  const userText = normalizeConversationText(platform, message.text ?? "");
-  if (message.id && userText && completedResponseText) {
+  if (
+    !conversationPersisted &&
+    message.id &&
+    userText &&
+    completedResponseText
+  ) {
     const latestState = (await thread.state) ?? {};
     await thread.setState({
       conversationContexts: appendConversationExchange(latestState, {
@@ -432,6 +501,11 @@ async function handleIncomingMessage(
         assistantText: completedResponseText,
         toolContext: completedToolContext,
       }),
+      processedMessageIds: recordProcessedConversationMessage(
+        latestState,
+        conversationOwner,
+        message.id,
+      ),
     });
   }
 

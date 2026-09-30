@@ -6,6 +6,7 @@ export type BotThreadState = {
   platform?: BotPlatform;
   externalUserId?: string;
   conversationContexts?: Record<string, BotConversationContext>;
+  processedMessageIds?: Record<string, string[]>;
 };
 
 export type BotConversationMessage = {
@@ -31,6 +32,8 @@ type ConversationOwner = {
 };
 
 const MAX_CONTEXTS_PER_THREAD = 8;
+const MAX_PROCESSED_CONTEXTS_PER_THREAD = 32;
+const MAX_PROCESSED_MESSAGES_PER_CONTEXT = 256;
 const MAX_CONTEXT_MESSAGES = 16;
 const MAX_MESSAGE_CHARS = 4_000;
 const MAX_CONTEXT_CHARS = 24_000;
@@ -58,11 +61,34 @@ export function hasProcessedConversationMessage(
   owner: ConversationOwner,
   sourceMessageId: string,
 ) {
+  const key = getConversationContextKey(owner);
   return Boolean(
-    getConversationContext(state, owner)?.messages.some(
-      (message) =>
-        message.role === "user" && message.sourceMessageId === sourceMessageId,
-    ),
+    state?.processedMessageIds?.[key]?.includes(sourceMessageId) ||
+      getConversationContext(state, owner)?.messages.some(
+        (message) =>
+          message.role === "user" &&
+          message.sourceMessageId === sourceMessageId,
+      ),
+  );
+}
+
+export function recordProcessedConversationMessage(
+  state: BotThreadState | null | undefined,
+  owner: ConversationOwner,
+  sourceMessageId: string,
+) {
+  const key = getConversationContextKey(owner);
+  const ledgers = { ...(state?.processedMessageIds ?? {}) };
+  const current = ledgers[key] ?? [];
+  ledgers[key] = [
+    ...current.filter((messageId) => messageId !== sourceMessageId),
+    sourceMessageId,
+  ].slice(-MAX_PROCESSED_MESSAGES_PER_CONTEXT);
+
+  return Object.fromEntries(
+    Object.entries(ledgers)
+      .sort(([, left], [, right]) => right.length - left.length)
+      .slice(0, MAX_PROCESSED_CONTEXTS_PER_THREAD),
   );
 }
 

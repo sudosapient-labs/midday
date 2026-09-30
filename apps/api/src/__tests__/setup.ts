@@ -724,6 +724,8 @@ export const mocks = {
       id: "whatsapp_app_123",
     }),
   ) as MockFn,
+  claimBotMessage: mock(() => Promise.resolve(true)) as MockFn,
+  completeBotMessage: mock(() => Promise.resolve(true)) as MockFn,
   consumePlatformLinkToken: mock(() =>
     Promise.resolve({
       code: "tst12345",
@@ -1084,6 +1086,8 @@ const dbQueriesMock = new Proxy(
     addDiscordConnection: mocks.addDiscordConnection,
     addTelegramConnection: mocks.addTelegramConnection,
     addWhatsAppConnection: mocks.addWhatsAppConnection,
+    claimBotMessage: mocks.claimBotMessage,
+    completeBotMessage: mocks.completeBotMessage,
     consumePlatformLinkToken: mocks.consumePlatformLinkToken,
     getApps: mocks.getApps,
     createApp: mocks.createApp,
