@@ -304,3 +304,40 @@ test("durable replay protection survives conversation cache eviction", async () 
 
   expect(assistant).toHaveBeenCalledTimes(1);
 });
+
+test("large tool results retain record IDs for later corrections", async () => {
+  const currentThread = thread();
+  assistant.mockImplementationOnce(async () => ({
+    text: Promise.resolve("Saved all expenses."),
+    fullStream: "Saved all expenses.",
+    steps: Promise.resolve([
+      {
+        toolResults: [
+          {
+            toolName: "transactions_create_bulk",
+            output: {
+              description: "x".repeat(8_000),
+              id: "last-transaction-id",
+              amount: 55,
+              currency: "USD",
+            },
+          },
+        ],
+      },
+    ]),
+    cleanup: async () => {},
+  }));
+
+  await subscribed(
+    currentThread,
+    message("save these expenses", "discord-b", "large-1"),
+  );
+  await subscribed(
+    currentThread,
+    message("correct the last one", "discord-b", "large-2"),
+  );
+
+  const context = JSON.stringify(assistant.mock.calls[1]?.[0].modelMessages);
+  expect(context).toContain("last-transaction-id");
+  expect(context).toContain("output.amount");
+});

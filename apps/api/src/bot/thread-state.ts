@@ -36,6 +36,7 @@ const MAX_PROCESSED_CONTEXTS_PER_THREAD = 32;
 const MAX_PROCESSED_MESSAGES_PER_CONTEXT = 256;
 const MAX_CONTEXT_MESSAGES = 16;
 const MAX_MESSAGE_CHARS = 4_000;
+const MAX_TOOL_CONTEXT_CHARS = 12_000;
 const MAX_CONTEXT_CHARS = 24_000;
 
 export function getConversationContextKey(owner: ConversationOwner) {
@@ -97,7 +98,12 @@ function trimConversationMessages(messages: BotConversationMessage[]) {
   let totalChars = 0;
 
   for (const message of messages.slice(-MAX_CONTEXT_MESSAGES).reverse()) {
-    const content = message.content.trim().slice(0, MAX_MESSAGE_CHARS);
+    const messageLimit = message.content.startsWith(
+      "Verified internal tool results",
+    )
+      ? MAX_TOOL_CONTEXT_CHARS
+      : MAX_MESSAGE_CHARS;
+    const content = message.content.trim().slice(0, messageLimit);
     if (!content) continue;
     if (totalChars + content.length > MAX_CONTEXT_CHARS) break;
     trimmed.push({ ...message, content });

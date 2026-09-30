@@ -558,7 +558,7 @@ async function summarizeToolResults(result: unknown) {
         })
         .map((toolResult) => ({
           toolName: toolResult.toolName ?? "unknown",
-          output: toolResult.output,
+          output: compactVerifiedToolOutput(toolResult.output),
         })),
     );
     if (results.length === 0) return "";
@@ -572,6 +572,56 @@ async function summarizeToolResults(result: unknown) {
     });
     return "";
   }
+}
+
+const VERIFIED_TOOL_FIELD_PATTERN =
+  /(?:^|_)(?:id|ids|status|success|error|name|description|amount|currency|total|count|date|number|reference|balance|category|account)(?:$|_)/iu;
+
+export function compactVerifiedToolOutput(output: unknown) {
+  const fields: Record<string, string | number | boolean | null> = {};
+  const seen = new Set<object>();
+  const maxFields = 100;
+
+  const visit = (value: unknown, path: string, depth: number) => {
+    if (Object.keys(fields).length >= maxFields || depth > 8) return;
+
+    if (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      const key = path.split(/[.[]/u).at(-1)?.replace(/\]$/u, "") ?? path;
+      if (VERIFIED_TOOL_FIELD_PATTERN.test(key)) {
+        fields[path] = typeof value === "string" ? value.slice(0, 500) : value;
+      }
+      return;
+    }
+
+    if (typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      for (const [index, item] of value.slice(0, 50).entries()) {
+        visit(item, `${path}[${index}]`, depth + 1);
+      }
+      return;
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      visit(child, path ? `${path}.${key}` : key, depth + 1);
+    }
+  };
+
+  visit(output, "output", 0);
+  if (Object.keys(fields).length > 0) {
+    return { verifiedFields: fields };
+  }
+
+  const fallback = JSON.stringify(output);
+  return {
+    summary: fallback?.slice(0, 1_000) ?? String(output).slice(0, 1_000),
+  };
 }
 
 async function resolveConversation(
