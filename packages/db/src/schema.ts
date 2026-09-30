@@ -694,7 +694,7 @@ export const bankAccounts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
-    createdBy: uuid("created_by").notNull(),
+    createdBy: uuid("created_by"),
     teamId: uuid("team_id").notNull(),
     name: text(),
     currency: text(),
@@ -1986,7 +1986,7 @@ export const discordInstallations = pgTable(
       columns: [table.createdBy],
       foreignColumns: [users.id],
       name: "discord_installations_created_by_fkey",
-    }).onDelete("cascade"),
+    }).onDelete("set null"),
     pgPolicy("Discord installations can be managed by team members", {
       as: "permissive",
       for: "all",

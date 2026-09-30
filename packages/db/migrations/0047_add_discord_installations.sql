@@ -2,14 +2,14 @@ CREATE TABLE discord_installations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   guild_id text NOT NULL,
   team_id uuid NOT NULL,
-  created_by uuid NOT NULL,
+  created_by uuid,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now(),
   CONSTRAINT discord_installations_guild_id_unique UNIQUE (guild_id),
   CONSTRAINT discord_installations_team_id_fkey
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
   CONSTRAINT discord_installations_created_by_fkey
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE INDEX discord_installations_team_id_idx
