@@ -326,6 +326,7 @@ async function handleIncomingMessage(
       countryCode: linkedTeam.countryCode ?? null,
       localTime: null,
       recentUploadSummaries,
+      surface: "messaging",
     }) +
     getPlatformInstructions(platform) +
     (connectedConversation.notificationContext
