@@ -20,6 +20,9 @@ The API must have `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, and
 URL from the authenticated API, so the application ID has one server-side source
 of truth. Users first add the bot to their chosen server, then paste the generated
 Midday connection message in a channel where the bot can read and send messages.
+The first successful connection binds that Discord server to one Midday
+workspace. Other workspaces cannot link users, run tools, upload documents, or
+receive notifications through the same server.
 
 `DISCORD_GUILD_ID` and `DISCORD_CHANNEL_ID` are optional deployment restrictions.
 When set, the API accepts traffic only from that server and channel. Leave them
@@ -65,6 +68,8 @@ graph TB
         PI[platform_identities]
         PLT[platform_link_tokens]
         PNB[provider_notification_batches]
+        DI[discord_installations]
+        BML[bot_message_ledger]
     end
 
     subgraph "Infrastructure"
@@ -97,6 +102,8 @@ graph TB
     LK --> PLT
     AN --> PNB
     AN --> PI
+    RT --> DI
+    RT --> BML
 ```
 
 ## Package Structure
@@ -329,6 +336,8 @@ Before sending, the system checks:
 1. **App installed** — `getAppByAppId()` for the provider and team.
 2. **App setting enabled** — per-app toggle (`transactions`, `invoices`, `matches`).
 3. **User notification preference** — `shouldSendNotification()` checks the user's `in_app` notification settings.
+4. **Current authorization** — the platform identity still belongs to the team and the user is still a member.
+5. **Discord installation** — the identity's guild is still bound to the notification's Midday workspace.
 
 #### Platform Delivery
 
@@ -425,6 +434,8 @@ Every message goes through a multi-step authorization chain:
 3. **Identity validation** — `requireResolvedConversationIdentity()` confirms `identity.teamId == resolved.teamId` and `identity.userId == resolved.actingUserId`.
 4. **Team access check** — `hasTeamAccess()` verifies the user still has access to the team (handles removed members).
 5. **Slack channel validation** — for non-DM Slack messages, `getAppBySlackTeamId()` confirms the channel's Slack workspace matches the resolved team's installed app.
+6. **Discord installation validation** — `discord_installations` binds each guild to exactly one Midday team and is checked on every turn.
+7. **Durable delivery claim** — `bot_message_ledger` uniquely claims each Discord message before tools or uploads run, so retries cannot repeat a financial action after delivery failure or conversation eviction.
 
 If any check fails, the thread state is cleared and the user is told to reconnect.
 
@@ -437,13 +448,18 @@ If any check fails, the thread state is cleared and the user is told to reconnec
 
 ### Database-Level Isolation
 
-- All three tables have RLS policies scoped to `private.get_teams_for_authenticated_user()`.
+- Messaging identity, installation, token, notification-batch, and delivery-ledger tables have RLS policies scoped to `private.get_teams_for_authenticated_user()`.
 - Unique constraints prevent duplicate identities: `(provider, external_team_id, external_user_id)`.
+- Discord guild ownership and processed message delivery keys are also protected by database unique constraints.
 - Custom error types (`PlatformIdentityAlreadyLinkedToAnotherTeamError`, etc.) handle conflict cases at the application layer.
 
 ### Bot User Scopes
 
 Connected bot users operate with `apis.all` scope, granting full Midday assistant capabilities. This is intentional — the bot should be able to answer any question the user could ask in the dashboard.
+Composio connector tools remain disabled on messaging surfaces because those
+connections are currently scoped to a user rather than a workspace installation.
+The bot uses an ordered message queue so every request and attachment in a rapid
+burst is processed instead of retaining only the final message.
 
 ---
 
