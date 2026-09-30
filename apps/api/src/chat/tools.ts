@@ -148,8 +148,11 @@ export function buildPrepareStep<T extends Record<string, Tool>>(options: {
 
   return (async (stepOptions: any) => {
     const step = await base(stepOptions);
-    if (step?.activeTools && always.length > 0) {
-      for (const name of always) {
+    if (step?.activeTools) {
+      const required = getRequiredConversationTools(
+        (stepOptions.messages ?? []) as ModelMessage[],
+      );
+      for (const name of [...required, ...always]) {
         if (!step.activeTools.includes(name)) {
           step.activeTools.push(name);
         }
@@ -348,6 +351,10 @@ export function getRequiredLexicalTools(query: string): string[] {
   }
 
   return ["transactions_list", "transactions_get"];
+}
+
+export function getRequiredConversationTools(messages: ModelMessage[]) {
+  return getRequiredLexicalTools(modelMessageText(messages));
 }
 
 function selectToolsLexically(query: string, maxTools: number): string[] {

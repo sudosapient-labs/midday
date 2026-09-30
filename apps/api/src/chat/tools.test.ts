@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getRequiredLexicalTools } from "./tools";
+import { getRequiredConversationTools, getRequiredLexicalTools } from "./tools";
 
 describe("lexical transaction tool routing", () => {
   test("routes a spending question to read-only report tools", () => {
@@ -36,5 +36,30 @@ describe("lexical transaction tool routing", () => {
 
   test("does not add transaction tools to unrelated requests", () => {
     expect(getRequiredLexicalTools("show my invoices")).toEqual([]);
+  });
+});
+
+describe("conversation-aware required tools", () => {
+  test("keeps write tools on a confirmation turn", () => {
+    expect(
+      getRequiredConversationTools([
+        {
+          role: "user",
+          content: "Today we spent 55 on water and 247 on curtains",
+        },
+        { role: "assistant", content: "Save both expenses to Cash?" },
+        { role: "user", content: "yes, save them" },
+      ]),
+    ).toContain("transactions_create_bulk");
+  });
+
+  test("drops an abandoned transaction action on an invoice topic switch", () => {
+    expect(
+      getRequiredConversationTools([
+        { role: "user", content: "Delete the old transactions" },
+        { role: "assistant", content: "Which transactions?" },
+        { role: "user", content: "show my invoices" },
+      ]),
+    ).not.toContain("transactions_delete_bulk");
   });
 });
