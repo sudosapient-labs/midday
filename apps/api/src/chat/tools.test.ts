@@ -62,4 +62,25 @@ describe("conversation-aware required tools", () => {
       ]),
     ).not.toContain("transactions_delete_bulk");
   });
+
+  test("continues from the most recent explicit task boundary", () => {
+    const tools = getRequiredConversationTools([
+      { role: "user", content: "Delete the old transactions" },
+      { role: "user", content: "create an invoice for Acme" },
+      { role: "user", content: "yes, create it" },
+    ]);
+
+    expect(tools).not.toContain("transactions_delete_bulk");
+  });
+
+  test("treats amount edits as changes to an unsaved expense preview", () => {
+    const tools = getRequiredConversationTools([
+      { role: "user", content: "Save expenses 0.55 water" },
+      { role: "user", content: "55, not 0.55" },
+      { role: "user", content: "yes, save them" },
+    ]);
+
+    expect(tools).toContain("transactions_create_bulk");
+    expect(tools).not.toContain("transactions_update");
+  });
 });

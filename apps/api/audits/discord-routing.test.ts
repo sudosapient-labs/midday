@@ -40,13 +40,13 @@ test("expense confirmation retains transaction creation tools", async () => {
   ).toContain("transactions_create_bulk");
 });
 
-test("amount correction exposes update rather than only creation tools", async () => {
+test("amount correction to an unsaved preview retains creation tools", async () => {
   expect(
     await selected(
       "Save these expenses: 55 water, 247 curtains",
       "55, not 0.55",
     ),
-  ).toContain("transactions_update");
+  ).toContain("transactions_create_bulk");
 });
 
 test("confirming an account selection preserves the pending expense workflow", async () => {

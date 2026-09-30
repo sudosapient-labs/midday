@@ -149,9 +149,12 @@ export function buildPrepareStep<T extends Record<string, Tool>>(options: {
   return (async (stepOptions: any) => {
     const step = await base(stepOptions);
     if (step?.activeTools) {
-      const required = getRequiredConversationTools(
-        (stepOptions.messages ?? []) as ModelMessage[],
+      const messages = (stepOptions.messages ?? []) as ModelMessage[];
+      const query = modelMessageText(messages);
+      step.activeTools = step.activeTools.filter((name) =>
+        permitsToolForIntent(String(name), query),
       );
+      const required = getRequiredConversationTools(messages);
       for (const name of [...required, ...always]) {
         if (!step.activeTools.includes(name)) {
           step.activeTools.push(name);
@@ -247,30 +250,36 @@ function modelMessageText(messages: ModelMessage[]): string {
       );
     });
 
-  const latest = userTexts.at(-1) ?? "";
-  const hasDomain =
+  const hasDomain = (text: string) =>
     /\b(?:accounts?|balances?|cash|categor(?:y|ies)|customers?|documents?|expenses?|invoices?|money|payments?|projects?|receipts?|reports?|revenue|runway|spend(?:ing)?|spent|tags?|tax|teams?|time|transactions?|trackers?)\b/iu.test(
-      latest,
+      text,
     );
-  const isContinuation =
+  const isContinuation = (text: string) =>
     /^(?:yes|yep|yeah|ok(?:ay)?|sure|confirm(?:ed)?|do it|go ahead)\b/iu.test(
-      latest.trim(),
+      text.trim(),
     ) ||
-    /\b(?:it|them|those|these|that|instead|not|correction)\b/iu.test(latest) ||
-    /^(?:use|choose|select)\b/iu.test(latest.trim()) ||
+    /\b(?:it|them|those|these|that|instead|not|correction)\b/iu.test(text) ||
+    /^(?:use|choose|select)\b/iu.test(text.trim()) ||
     // An action without a named business domain usually confirms the task the
     // assistant just previewed (for example, “yes, save them”).
-    (/\b(?:save|create|update|delete|send)\b/iu.test(latest) && !hasDomain);
+    (/\b(?:save|create|update|delete|send)\b/iu.test(text) && !hasDomain(text));
+
+  const latest = userTexts.at(-1) ?? "";
 
   // An explicit domain starts a new task. Contextual replies retain enough
   // prior user turns to preserve the task through confirmation and
   // clarification chains without leaking an abandoned task into a topic
   // switch such as “show my invoices”.
-  if ((hasDomain && !isContinuation) || userTexts.length < 2) {
+  if ((hasDomain(latest) && !isContinuation(latest)) || userTexts.length < 2) {
     return latest;
   }
 
-  return userTexts.slice(-6).join(" ");
+  const taskStart = userTexts.findLastIndex(
+    (text, index) =>
+      index < userTexts.length - 1 && hasDomain(text) && !isContinuation(text),
+  );
+
+  return userTexts.slice(Math.max(taskStart, 0)).join(" ");
 }
 
 function lexicalTokens(text: string): Set<string> {
@@ -292,6 +301,75 @@ function lexicalTokens(text: string): Set<string> {
   return expanded;
 }
 
+function isWriteToolName(name: string) {
+  return /(?:^|_)(?:confirm|create|decline|delete|draft|duplicate|export|match|pause|resume|send|start|stop|sync|toggle|unmatch|update|upsert)(?:_|$)/u.test(
+    name,
+  );
+}
+
+function permitsToolForIntent(name: string, query: string) {
+  if (!isWriteToolName(name)) return true;
+  if (!matchesWriteDomain(name, query)) return false;
+
+  if (/(?:^|_)delete(?:_|$)/u.test(name)) {
+    return /\b(?:delete|remove|void)\b/iu.test(query);
+  }
+  if (/(?:^|_)(?:update|upsert)(?:_|$)/u.test(name)) {
+    return /\b(?:categor(?:ize|ise)|change|correct|correction|edit|fix|update)\b/iu.test(
+      query,
+    );
+  }
+  if (/(?:^|_)(?:create|draft)(?:_|$)/u.test(name)) {
+    return /\b(?:add|book|create|draft|enter|log|record|save|store|track)\b/iu.test(
+      query,
+    );
+  }
+  if (/(?:^|_)send(?:_|$)/u.test(name)) {
+    return /\bsend\b/iu.test(query);
+  }
+  if (/(?:^|_)start(?:_|$)/u.test(name)) {
+    return /\bstart\b/iu.test(query);
+  }
+  if (/(?:^|_)sync(?:_|$)/u.test(name)) {
+    return /\bsync\b/iu.test(query);
+  }
+  if (/(?:^|_)export(?:_|$)/u.test(name)) {
+    return /\bexport\b/iu.test(query);
+  }
+  if (/(?:^|_)duplicate(?:_|$)/u.test(name)) {
+    return /\bduplicate\b/iu.test(query);
+  }
+  if (/(?:^|_)(?:confirm|decline|match|unmatch)(?:_|$)/u.test(name)) {
+    return /\b(?:confirm|decline|match|unmatch)\b/iu.test(query);
+  }
+  if (/(?:^|_)(?:pause|resume|stop|toggle)(?:_|$)/u.test(name)) {
+    return /\b(?:pause|resume|stop|toggle)\b/iu.test(query);
+  }
+
+  return false;
+}
+
+function matchesWriteDomain(name: string, query: string) {
+  const rules: Array<[RegExp, RegExp]> = [
+    [
+      /^transactions?_/u,
+      /\b(?:expenses?|payments?|purchases?|spend|spent|transactions?)\b/iu,
+    ],
+    [/^invoices?_/u, /\binvoices?\b/iu],
+    [/^bank_accounts?_/u, /\b(?:accounts?|balances?|bank|cash)\b/iu],
+    [/^customers?_/u, /\b(?:clients?|customers?)\b/iu],
+    [/^categories?_/u, /\bcategor(?:y|ies|ize|ise)\b/iu],
+    [/^documents?_/u, /\b(?:documents?|files?)\b/iu],
+    [/^document_tags?_/u, /\b(?:document tags?|tags?)\b/iu],
+    [/^inbox_/u, /\b(?:inbox|receipts?)\b/iu],
+    [/^tags?_/u, /\btags?\b/iu],
+    [/^tracker_/u, /\b(?:projects?|time|timers?|trackers?)\b/iu],
+    [/^accounting_/u, /\baccounting\b/iu],
+  ];
+  const matchingRule = rules.find(([prefix]) => prefix.test(name));
+  return matchingRule ? matchingRule[1].test(query) : false;
+}
+
 export function getRequiredLexicalTools(query: string): string[] {
   const hasTransactionContext =
     /\b(?:transactions?|expenses?|spend|spending|spent|payments?|purchases?|outlays?|balance|cash)\b/iu.test(
@@ -309,6 +387,10 @@ export function getRequiredLexicalTools(query: string): string[] {
       query,
     );
   const isDelete = /\b(?:delete|remove|void)\b/iu.test(query);
+  const isStrongCorrection =
+    /\b(?:change|correct|correction|edit|fix|update|categor(?:ize|ise))\b/iu.test(
+      query,
+    );
 
   if (isDelete) {
     return [
@@ -319,7 +401,7 @@ export function getRequiredLexicalTools(query: string): string[] {
     ];
   }
 
-  if (isCorrection) {
+  if (isCorrection && (isStrongCorrection || !isWrite)) {
     return [
       "categories_list",
       "bank_accounts_list",
@@ -377,7 +459,7 @@ function selectToolsLexically(query: string, maxTools: number): string[] {
 
       return { name: definition.name, score };
     })
-    .filter(({ score }) => score > 0)
+    .filter(({ name, score }) => score > 0 && permitsToolForIntent(name, query))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 
   const transactionTools = getRequiredLexicalTools(query);
