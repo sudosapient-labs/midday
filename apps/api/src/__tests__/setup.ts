@@ -749,7 +749,7 @@ export const mocks = {
   ) as MockFn,
   getAppBySlackTeamId: mock(() => Promise.resolve(null)) as MockFn,
   getDiscordInstallation: mock(() =>
-    Promise.resolve({ id: "discord_installation_123", teamId: "team-b" }),
+    Promise.resolve({ id: "discord_installation_123", teamId: "team_123" }),
   ) as MockFn,
   getPlatformIdentity: mock(() => Promise.resolve(null)) as MockFn,
   updatePlatformIdentityMetadata: mock(() => Promise.resolve(null)) as MockFn,
