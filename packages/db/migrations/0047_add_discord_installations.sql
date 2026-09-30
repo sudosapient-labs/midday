@@ -15,6 +15,21 @@ CREATE TABLE discord_installations (
 CREATE INDEX discord_installations_team_id_idx
   ON discord_installations (team_id);
 
+-- Existing Discord links predate installation ownership. Deterministically
+-- bind each guild to its earliest linked workspace; identities from any other
+-- workspace remain unable to execute and must be disconnected by an admin.
+INSERT INTO discord_installations (guild_id, team_id, created_by, created_at, updated_at)
+SELECT DISTINCT ON (external_team_id)
+  external_team_id,
+  team_id,
+  user_id,
+  COALESCE(created_at, now()),
+  COALESCE(updated_at, now())
+FROM platform_identities
+WHERE provider = 'discord' AND external_team_id <> ''
+ORDER BY external_team_id, created_at ASC, id ASC
+ON CONFLICT (guild_id) DO NOTHING;
+
 ALTER TABLE discord_installations ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Discord installations can be managed by team members"
