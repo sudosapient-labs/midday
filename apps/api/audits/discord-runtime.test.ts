@@ -49,15 +49,30 @@ function message(text: string, userId = "discord-b", id = "current") {
   };
 }
 function thread(history: any[] = []) {
+  let threadState: Record<string, unknown> = {};
   return {
     id: "discord:guild:channel:thread",
     channelId: "guild",
     adapter: { name: "discord" },
     isDM: false,
-    state: {},
+    get state() {
+      return threadState;
+    },
+    set state(value: Record<string, unknown>) {
+      threadState = value;
+    },
     recentMessages: history,
     refresh: async () => {},
-    setState: mock(async () => {}),
+    setState: mock(
+      async (
+        nextState: Record<string, unknown>,
+        options?: { replace?: boolean },
+      ) => {
+        threadState = options?.replace
+          ? nextState
+          : { ...threadState, ...nextState };
+      },
+    ),
     subscribe: async () => {},
     startTyping: async () => {},
     post: mock(async () => {}),
@@ -172,4 +187,43 @@ test("control: the current message is not duplicated when history already includ
   const current = message("Current expense question");
   await subscribed(thread([current]), current);
   expect(assistant.mock.calls[0]?.[0].modelMessages).toHaveLength(1);
+});
+
+test("persists task text and verified tool outcomes across follow-up turns", async () => {
+  const currentThread = thread();
+  assistant.mockImplementationOnce(async () => ({
+    text: Promise.resolve("I found Cash. Save both expenses there?"),
+    fullStream: "I found Cash. Save both expenses there?",
+    steps: Promise.resolve([
+      {
+        toolResults: [
+          {
+            toolName: "bank_accounts_list",
+            output: { id: "account_cash", name: "Cash" },
+          },
+        ],
+      },
+    ]),
+    cleanup: async () => {},
+  }));
+
+  await subscribed(
+    currentThread,
+    message("Save 55 for water and 247 for curtains", "discord-b", "turn_1"),
+  );
+  await subscribed(
+    currentThread,
+    message("yes, save them", "discord-b", "turn_2"),
+  );
+
+  const followUpMessages = assistant.mock.calls[1]?.[0].modelMessages;
+  expect(JSON.stringify(followUpMessages)).toContain("Save 55 for water");
+  expect(JSON.stringify(followUpMessages)).toContain("account_cash");
+  expect(JSON.stringify(followUpMessages)).toContain("yes, save them");
+
+  await subscribed(
+    currentThread,
+    message("yes, save them", "discord-b", "turn_2"),
+  );
+  expect(assistant).toHaveBeenCalledTimes(2);
 });
