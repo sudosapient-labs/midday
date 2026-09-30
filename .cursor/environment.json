@@ -1,0 +1,17 @@
+{
+  "name": "Midday",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "user": "ubuntu",
+  "install": "./scripts/cloud-agent-install.sh",
+  "start": "./scripts/cloud-agent-start.sh",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "bun run dev:local"
+    }
+  ],
+  "ports": [3001, 3003, 54321, 54322, 54323, 54324, 6379]
+}

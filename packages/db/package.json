@@ -5,7 +5,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "db:bootstrap": "psql \"$DATABASE_SESSION_POOLER\" -v ON_ERROR_STOP=1 -f src/test/helpers/setup-test-db.sql",
-    "db:push": "bunx drizzle-kit push --config=drizzle.config.push.ts",
+    "db:push": "bunx drizzle-kit push --config=drizzle.config.push.ts --force",
     "db:setup": "bun run db:bootstrap && bun run db:push",
     "test": "bun test --exit",
     "eval:matching:db": "bun run src/scripts/matching-eval-db.ts",
