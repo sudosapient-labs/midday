@@ -73,6 +73,7 @@ mock.module("@midday/bot", () => ({
   getPlatformInstructions: mock(() => ""),
   isSupportedInboxUploadMediaType: mock(() => false),
   processInboxUpload: mock(() => Promise.resolve(null)),
+  splitDiscordText: (text: string) => [text],
 }));
 
 const {

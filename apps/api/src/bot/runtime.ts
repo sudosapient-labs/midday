@@ -44,6 +44,7 @@ import {
   isSupportedInboxUploadMediaType,
   type NotificationContext,
   processInboxUpload,
+  splitDiscordText,
 } from "@midday/bot";
 import { db } from "@midday/db/client";
 import {
@@ -382,7 +383,9 @@ async function handleIncomingMessage(
         completedResponseText =
           "I couldn't generate a response for that request. Please try again.";
       }
-      await thread.post(completedResponseText);
+      for (const chunk of splitDiscordText(completedResponseText)) {
+        await thread.post(chunk);
+      }
     } else {
       await thread.post(result.fullStream);
       completedResponseText = (await result.text).trim();
