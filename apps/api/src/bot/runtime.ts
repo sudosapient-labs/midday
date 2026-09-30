@@ -136,18 +136,28 @@ export function registerMiddayBotRuntime() {
   });
 
   bot.onNewMessage(/[\s\S]*/u, async (thread, message) => {
-    if (thread.adapter.name !== "slack" || !thread.isDM) {
+    const isSlackDm = thread.adapter.name === "slack" && thread.isDM;
+    const isDiscordConnection =
+      thread.adapter.name === "discord" &&
+      isAllowedDiscordChannel(thread) &&
+      isExplicitConnectionAttempt("discord", message.text);
+
+    if (!isSlackDm && !isDiscordConnection) {
       return;
     }
 
     try {
-      await thread.subscribe().catch(() => {});
+      if (isSlackDm) {
+        await thread.subscribe().catch(() => {});
+      }
       await handleIncomingMessage(thread, message);
     } catch (error) {
-      logger.error("[bot] Unhandled error in onNewMessage (Slack DM)", {
+      logger.error("[bot] Unhandled error in onNewMessage", {
+        platform: thread.adapter.name,
         error: error instanceof Error ? error.message : String(error),
         threadId: thread?.id,
       });
+      await postBotFailure(thread);
     }
   });
 
