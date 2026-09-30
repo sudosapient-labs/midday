@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { canReuseCachedThreadState } from "../../bot/thread-state";
+import {
+  appendConversationExchange,
+  canReuseCachedThreadState,
+  getConversationContext,
+  hasProcessedConversationMessage,
+} from "../../bot/thread-state";
 
 describe("bot thread state reuse", () => {
   test("reuses cached state when the same telegram user continues", () => {
@@ -84,5 +89,70 @@ describe("bot thread state reuse", () => {
         },
       ),
     ).toBe(false);
+  });
+});
+
+describe("persistent bot conversation context", () => {
+  const owner = {
+    platform: "discord" as const,
+    teamId: "team_123",
+    actingUserId: "user_123",
+    externalUserId: "discord_user_123",
+  };
+
+  test("keeps exchanges scoped to platform, workspace, and user", () => {
+    const conversationContexts = appendConversationExchange(
+      {},
+      {
+        ...owner,
+        sourceMessageId: "message_1",
+        userText: "Save these expenses",
+        assistantText: "Which account should I use?",
+        updatedAt: "2026-09-30T10:00:00.000Z",
+      },
+    );
+    const state = { conversationContexts };
+
+    expect(getConversationContext(state, owner)?.messages).toEqual([
+      {
+        role: "user",
+        content: "Save these expenses",
+        sourceMessageId: "message_1",
+      },
+      { role: "assistant", content: "Which account should I use?" },
+    ]);
+    expect(
+      getConversationContext(state, { ...owner, teamId: "other_team" }),
+    ).toBeNull();
+  });
+
+  test("recognizes a completed message retry without appending it twice", () => {
+    const first = appendConversationExchange(
+      {},
+      {
+        ...owner,
+        sourceMessageId: "message_1",
+        userText: "Yes, save them",
+        assistantText: "Saved two expenses.",
+      },
+    );
+    const second = appendConversationExchange(
+      { conversationContexts: first },
+      {
+        ...owner,
+        sourceMessageId: "message_1",
+        userText: "Yes, save them",
+        assistantText: "Saved two expenses again.",
+      },
+    );
+
+    expect(second).toEqual(first);
+    expect(
+      hasProcessedConversationMessage(
+        { conversationContexts: second },
+        owner,
+        "message_1",
+      ),
+    ).toBe(true);
   });
 });

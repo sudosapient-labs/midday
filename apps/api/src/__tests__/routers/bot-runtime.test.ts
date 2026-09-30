@@ -654,11 +654,15 @@ describe("bot runtime link-code consumption", () => {
 
       expect(posts).toEqual(["Your bank balance is $12,345."]);
       expect(cleanup).toHaveBeenCalled();
-      expect(toAiMessagesMock).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ id: "message_123" }),
-        ]),
-        expect.objectContaining({ includeNames: true }),
+      expect(streamMiddayAssistantMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelMessages: [
+            {
+              role: "user",
+              content: "what is my bank balance?",
+            },
+          ],
+        }),
       );
     } finally {
       if (originalGuildId === undefined) {

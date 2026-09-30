@@ -22,8 +22,11 @@ import {
   rememberThreadState,
 } from "@api/bot/thread-helpers";
 import {
+  appendConversationExchange,
   type BotThreadState,
   canReuseCachedThreadState,
+  getConversationContext,
+  hasProcessedConversationMessage,
 } from "@api/bot/thread-state";
 import { streamMiddayAssistant } from "@api/chat/assistant-runtime";
 import { buildSystemPrompt } from "@api/chat/prompt";
@@ -61,7 +64,7 @@ import {
 } from "@midday/db/queries";
 import { createLoggerWithContext } from "@midday/logger";
 import type { ModelMessage } from "ai";
-import type { AiMessage, Attachment, Message, Thread } from "chat";
+import type { Attachment, Message, Thread } from "chat";
 import { toAiMessages } from "chat";
 import type { SendblueAdapter } from "chat-adapter-sendblue";
 
@@ -231,6 +234,29 @@ async function handleIncomingMessage(
     return;
   }
 
+  const externalUserId = getMessageAuthorId(message);
+  const conversationOwner = {
+    teamId: connectedConversation.teamId,
+    actingUserId: connectedConversation.actingUserId,
+    platform,
+    externalUserId,
+  };
+  const persistedThreadState = (await thread.state) ?? {};
+
+  // Gateway and webhook retries can deliver the same message more than once.
+  // A completed exchange is the idempotency boundary: ignore the retry rather
+  // than executing its financial action a second time.
+  if (
+    message.id &&
+    hasProcessedConversationMessage(
+      persistedThreadState,
+      conversationOwner,
+      message.id,
+    )
+  ) {
+    return;
+  }
+
   await thread.startTyping("Working in Midday...").catch(() => {});
 
   const { summaries: recentUploadSummaries, richMessages: uploadMessages } =
@@ -252,8 +278,6 @@ async function handleIncomingMessage(
       return;
     }
   }
-
-  const history = await getConversationHistory(thread, message);
 
   const mcpCtx: McpContext = {
     db,
@@ -289,40 +313,73 @@ async function handleIncomingMessage(
         )}`
       : "");
 
-  const modelMessages = await toAiMessages(history, {
-    // Discord channels can contain several linked users. Preserve the
-    // speaker name so the assistant does not merge their requests together.
-    includeNames: platform === "slack" || platform === "discord",
-    transformMessage:
-      platform === "discord"
-        ? (aiMessage) => normalizeDiscordAiMessage(aiMessage)
-        : undefined,
-  });
+  const persistedContext = getConversationContext(
+    persistedThreadState,
+    conversationOwner,
+  );
+  let modelMessages: Array<ModelMessage>;
 
-  stripFileAndImageParts(modelMessages as Array<ModelMessage>);
+  if (persistedContext || platform === "discord") {
+    // Persisted context is scoped to the linked Midday workspace and external
+    // user. In shared Discord threads, raw channel history can contain another
+    // workspace's request, so a new scoped conversation starts from the
+    // current message instead of importing the whole channel.
+    modelMessages = (persistedContext?.messages ?? []).map((item) => ({
+      role: item.role,
+      content: item.content,
+    }));
+
+    const currentText = normalizeConversationText(platform, message.text ?? "");
+    if (currentText) {
+      modelMessages.push({ role: "user", content: currentText });
+    }
+  } else {
+    const history = await getConversationHistory(thread, message);
+    modelMessages = (await toAiMessages(history, {
+      includeNames: platform === "slack",
+    })) as Array<ModelMessage>;
+  }
+
+  stripFileAndImageParts(modelMessages);
 
   const result = await streamMiddayAssistant({
     mcpCtx,
     systemPrompt,
-    modelMessages: modelMessages as Array<ModelMessage>,
+    modelMessages,
   });
 
+  let completedResponseText = "";
   try {
     if (platform === "discord") {
       // Discord's fallback streaming implementation attempts to edit the
       // placeholder for tool/reasoning chunks that contain no visible text.
       // Discord rejects those empty edits and leaves the placeholder behind,
       // so wait for the completed answer and post it once instead.
-      const responseText = (await result.text).trim();
-      await thread.post(
-        responseText ||
-          "I couldn't generate a response for that request. Please try again.",
-      );
+      completedResponseText = (await result.text).trim();
+      if (!completedResponseText) {
+        completedResponseText =
+          "I couldn't generate a response for that request. Please try again.";
+      }
+      await thread.post(completedResponseText);
     } else {
       await thread.post(result.fullStream);
+      completedResponseText = (await result.text).trim();
     }
   } finally {
     await result.cleanup();
+  }
+
+  const userText = normalizeConversationText(platform, message.text ?? "");
+  if (message.id && userText && completedResponseText) {
+    const latestState = (await thread.state) ?? {};
+    await thread.setState({
+      conversationContexts: appendConversationExchange(latestState, {
+        ...conversationOwner,
+        sourceMessageId: message.id,
+        userText,
+        assistantText: completedResponseText,
+      }),
+    });
   }
 
   if (
@@ -939,26 +996,10 @@ export function normalizeDiscordMessageText(
     .trim();
 }
 
-function normalizeDiscordAiMessage(aiMessage: AiMessage): AiMessage {
-  if (typeof aiMessage.content === "string") {
-    return {
-      ...aiMessage,
-      content: normalizeDiscordMessageText(aiMessage.content),
-    };
-  }
-
-  if (aiMessage.role !== "user") {
-    return aiMessage;
-  }
-
-  return {
-    ...aiMessage,
-    content: aiMessage.content.map((part) =>
-      part.type === "text"
-        ? { ...part, text: normalizeDiscordMessageText(part.text) }
-        : part,
-    ),
-  };
+function normalizeConversationText(platform: BotPlatform, text: string) {
+  return platform === "discord"
+    ? normalizeDiscordMessageText(text)
+    : text.trim();
 }
 
 function isSupportedAttachment(attachment: Attachment) {
