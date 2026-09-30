@@ -24,8 +24,14 @@ export async function streamMiddayAssistant(params: {
   mcpCtx: McpContext;
   systemPrompt: string;
   modelMessages: Array<ModelMessage>;
+  enableComposioTools?: boolean;
 }) {
-  const { mcpCtx, systemPrompt, modelMessages } = params;
+  const {
+    mcpCtx,
+    systemPrompt,
+    modelMessages,
+    enableComposioTools = true,
+  } = params;
 
   const useToolIndex = process.env.OPENAI_DISABLE_TOOL_INDEX !== "true";
   if (useToolIndex) {
@@ -36,7 +42,7 @@ export async function streamMiddayAssistant(params: {
 
   const [resolvedClient, composioMetaTools] = await Promise.all([
     createExecutionClient(mcpCtx),
-    getComposioTools(mcpCtx.userId),
+    enableComposioTools ? getComposioTools(mcpCtx.userId) : Promise.resolve({}),
   ]);
 
   let closed = false;

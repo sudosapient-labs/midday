@@ -116,6 +116,7 @@ test("a linked workspace uses its own currency after the user switches dashboard
   const input = assistant.mock.calls[0]![0];
   expect(input.mcpCtx.teamId).toBe("team-b");
   expect(input.systemPrompt).toContain("Base currency: INR");
+  expect(input.enableComposioTools).toBe(false);
 });
 
 test("a different workspace's thread context is not reused for the current user's tools", async () => {

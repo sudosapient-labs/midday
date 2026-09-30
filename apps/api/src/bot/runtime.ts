@@ -388,6 +388,10 @@ async function handleIncomingMessage(
     mcpCtx,
     systemPrompt,
     modelMessages,
+    // Composio connections are currently scoped to a Midday user rather than
+    // a workspace installation. Keep them out of messaging surfaces until the
+    // execution boundary can prove that the connection belongs to this team.
+    enableComposioTools: false,
   });
 
   let completedResponseText = "";
