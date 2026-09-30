@@ -245,20 +245,29 @@ function modelMessageText(messages: ModelMessage[]): string {
     });
 
   const latest = userTexts.at(-1) ?? "";
-  // Route from the current request whenever it names a domain. For short
-  // follow-ups such as “yes, save it” or “what about that?”, retain one prior
-  // turn so the required tool family is still available without allowing an
-  // old write request to contaminate every later question.
-  if (
-    /\b(?:account|balance|cash|category|customer|document|expense|invoice|money|payment|project|receipt|report|revenue|runway|spend|spent|tag|tax|team|time|transaction|tracker|save|create|update|delete|send)\b/iu.test(
+  const hasDomain =
+    /\b(?:accounts?|balances?|cash|categor(?:y|ies)|customers?|documents?|expenses?|invoices?|money|payments?|projects?|receipts?|reports?|revenue|runway|spend(?:ing)?|spent|tags?|tax|teams?|time|transactions?|trackers?)\b/iu.test(
       latest,
+    );
+  const isContinuation =
+    /^(?:yes|yep|yeah|ok(?:ay)?|sure|confirm(?:ed)?|do it|go ahead)\b/iu.test(
+      latest.trim(),
     ) ||
-    userTexts.length < 2
-  ) {
+    /\b(?:it|them|those|these|that|instead|not|correction)\b/iu.test(latest) ||
+    /^(?:use|choose|select)\b/iu.test(latest.trim()) ||
+    // An action without a named business domain usually confirms the task the
+    // assistant just previewed (for example, “yes, save them”).
+    (/\b(?:save|create|update|delete|send)\b/iu.test(latest) && !hasDomain);
+
+  // An explicit domain starts a new task. Contextual replies retain enough
+  // prior user turns to preserve the task through confirmation and
+  // clarification chains without leaking an abandoned task into a topic
+  // switch such as “show my invoices”.
+  if ((hasDomain && !isContinuation) || userTexts.length < 2) {
     return latest;
   }
 
-  return userTexts.slice(-2).join(" ");
+  return userTexts.slice(-6).join(" ");
 }
 
 function lexicalTokens(text: string): Set<string> {
@@ -293,7 +302,9 @@ export function getRequiredLexicalTools(query: string): string[] {
   const isWrite =
     /\b(?:add|book|create|enter|log|record|save|store|track)\b/iu.test(query);
   const isCorrection =
-    /\b(?:change|correct|edit|fix|update|categor(?:ize|ise))\b/iu.test(query);
+    /\b(?:change|correct|correction|edit|fix|instead|not|update|categor(?:ize|ise))\b/iu.test(
+      query,
+    );
   const isDelete = /\b(?:delete|remove|void)\b/iu.test(query);
 
   if (isDelete) {
