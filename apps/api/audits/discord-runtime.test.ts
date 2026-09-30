@@ -85,6 +85,10 @@ beforeEach(() => {
   upload.mockClear();
   mocks.consumePlatformLinkToken.mockClear();
   mocks.hasTeamAccess.mockImplementation(async () => true);
+  mocks.getDiscordInstallation.mockImplementation(async () => ({
+    id: "discord-installation-b",
+    teamId: "team-b",
+  }));
   mocks.getPlatformIdentity.mockImplementation(async () => ({
     id: "identity-b",
     userId: "user-b",
@@ -135,6 +139,28 @@ test("a different workspace's thread context is not reused for the current user'
   expect(JSON.stringify(input?.modelMessages)).not.toContain(
     "workspace A expenses",
   );
+});
+
+test("a Discord server cannot execute for a second Midday workspace", async () => {
+  mocks.getPlatformIdentity.mockImplementation(async () => ({
+    id: "identity-a",
+    userId: "user-a",
+    teamId: "team-a",
+    metadata: null,
+  }));
+  mocks.getUserById.mockImplementation(async () => ({
+    id: "user-a",
+    fullName: "Alice",
+  }));
+  mocks.getTeamById.mockImplementation(async () => ({
+    id: "team-a",
+    name: "Workspace A",
+    baseCurrency: "USD",
+  }));
+
+  await subscribed(thread(), message("show balance", "discord-a"));
+
+  expect(assistant).not.toHaveBeenCalled();
 });
 
 test("receipt notification metadata points to the Discord thread, not the guild", async () => {

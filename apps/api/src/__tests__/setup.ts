@@ -746,6 +746,9 @@ export const mocks = {
     }),
   ) as MockFn,
   getAppBySlackTeamId: mock(() => Promise.resolve(null)) as MockFn,
+  getDiscordInstallation: mock(() =>
+    Promise.resolve({ id: "discord_installation_123", teamId: "team-b" }),
+  ) as MockFn,
   getPlatformIdentity: mock(() => Promise.resolve(null)) as MockFn,
   updatePlatformIdentityMetadata: mock(() => Promise.resolve(null)) as MockFn,
 
@@ -1087,6 +1090,7 @@ const dbQueriesMock = new Proxy(
     createOrUpdatePlatformIdentity: mocks.createOrUpdatePlatformIdentity,
     createPlatformLinkToken: mocks.createPlatformLinkToken,
     getAppBySlackTeamId: mocks.getAppBySlackTeamId,
+    getDiscordInstallation: mocks.getDiscordInstallation,
     getPlatformIdentity: mocks.getPlatformIdentity,
     updatePlatformIdentityMetadata: mocks.updatePlatformIdentityMetadata,
     getAppByAppId: createDefaultMock(),

@@ -7,6 +7,7 @@ export * from "./bank-connections";
 export * from "./customer-analytics";
 export * from "./customer-enrichment";
 export * from "./customers";
+export * from "./discord-installations";
 export * from "./document-tag-assignments";
 export * from "./document-tag-embedings";
 export * from "./document-tags";

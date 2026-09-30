@@ -48,6 +48,7 @@ import {
 } from "@midday/bot";
 import { db } from "@midday/db/client";
 import {
+  DiscordInstallationAlreadyLinkedError,
   TelegramAlreadyConnectedToAnotherTeamError,
   WhatsAppAlreadyConnectedToAnotherTeamError,
 } from "@midday/db/errors";
@@ -58,6 +59,7 @@ import {
   consumePlatformLinkToken,
   createOrUpdatePlatformIdentity,
   getAppBySlackTeamId,
+  getDiscordInstallation,
   getPlatformIdentity,
   getTeamById,
   getUserById,
@@ -622,6 +624,18 @@ async function hydrateResolvedConversationIdentity(params: {
     return null;
   }
 
+  if (platform === "discord") {
+    const guildId = getDiscordGuildId(thread);
+    if (!guildId) {
+      return null;
+    }
+
+    const installation = await getDiscordInstallation(db, guildId);
+    if (!installation || installation.teamId !== connectedConversation.teamId) {
+      return null;
+    }
+  }
+
   return connectedConversation;
 }
 
@@ -736,6 +750,13 @@ function resolveDiscordConversation(
         throw new PlatformSetupFailedError();
       }
     },
+    platformErrors: [
+      {
+        errorClass: DiscordInstallationAlreadyLinkedError,
+        message:
+          "This Discord server is already connected to another Midday workspace.",
+      },
+    ],
     welcomeMessage: (name) => buildWelcomeMessage(name, "discord"),
     invalidCodeMessage:
       "That Discord link code is invalid or expired. Open Midday and generate a new one.",

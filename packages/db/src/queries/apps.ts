@@ -11,6 +11,7 @@ import {
   WhatsAppAlreadyConnectedToAnotherTeamError,
 } from "../errors";
 import { apps, platformIdentities, usersOnTeam } from "../schema";
+import { claimDiscordInstallation } from "./discord-installations";
 
 export type AppRecord<TAppId extends string = string> = Omit<
   typeof apps.$inferSelect,
@@ -614,6 +615,24 @@ export const addDiscordConnection = async (
     createdBy: linkingUserId,
   } = params;
 
+  let createdBy = linkingUserId;
+  if (!createdBy) {
+    const [firstMember] = await db
+      .select({ userId: usersOnTeam.userId })
+      .from(usersOnTeam)
+      .where(eq(usersOnTeam.teamId, teamId))
+      .limit(1);
+    createdBy = firstMember?.userId;
+  }
+
+  if (!createdBy) {
+    return undefined;
+  }
+
+  if (guildId) {
+    await claimDiscordInstallation(db, { guildId, teamId, createdBy });
+  }
+
   const newConnection: DiscordConnection = {
     userId,
     guildId,
@@ -646,14 +665,6 @@ export const addDiscordConnection = async (
 
     return result as AppRecord<"discord"> | undefined;
   }
-
-  const firstMember = await db
-    .select({ userId: usersOnTeam.userId })
-    .from(usersOnTeam)
-    .where(eq(usersOnTeam.teamId, teamId))
-    .limit(1);
-
-  const createdBy = linkingUserId || firstMember[0]?.userId || teamId;
 
   const [result] = await db
     .insert(apps)
