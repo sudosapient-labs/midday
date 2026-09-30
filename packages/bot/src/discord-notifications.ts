@@ -51,7 +51,10 @@ export async function sendDiscordTextNotification(params: {
           Authorization: `Bot ${botToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          content,
+          allowed_mentions: { parse: [] },
+        }),
       },
     );
 

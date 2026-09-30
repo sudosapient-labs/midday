@@ -1052,6 +1052,8 @@ async function processIncomingAttachments(params: {
           messageId: message?.id,
           externalUserId: getMessageAuthorId(message),
           actingUserId,
+          guildId:
+            platform === "discord" ? getDiscordGuildId(thread) : undefined,
         },
       });
 

@@ -86,6 +86,8 @@ export async function triggerMatchingNotification(params: {
             threadTs?: string;
             messageTs?: string;
             phoneNumber?: string;
+            externalUserId?: string;
+            guildId?: string;
           };
         }
       | undefined;
