@@ -87,6 +87,7 @@ export function appendConversationExchange(
     sourceMessageId: string;
     userText: string;
     assistantText: string;
+    toolContext?: string;
     updatedAt?: string;
   },
 ) {
@@ -116,6 +117,14 @@ export function appendConversationExchange(
         content: params.userText,
         sourceMessageId: params.sourceMessageId,
       },
+      ...(params.toolContext
+        ? [
+            {
+              role: "assistant" as const,
+              content: params.toolContext,
+            },
+          ]
+        : []),
       { role: "assistant", content: params.assistantText },
     ]),
     updatedAt: params.updatedAt ?? new Date().toISOString(),

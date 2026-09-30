@@ -91,6 +91,7 @@ function isSafeAttachmentUrl(raw: string): boolean {
 }
 
 const ALL_ASSISTANT_SCOPES = expandScopes(["apis.all"]) as McpContext["scopes"];
+const MAX_PERSISTED_TOOL_CONTEXT_CHARS = 12_000;
 
 type ResolvedConversation =
   | (ConnectedResolvedConversation & { consumed?: boolean })
@@ -372,6 +373,7 @@ async function handleIncomingMessage(
   });
 
   let completedResponseText = "";
+  let completedToolContext = "";
   try {
     if (platform === "discord") {
       // Discord's fallback streaming implementation attempts to edit the
@@ -390,6 +392,7 @@ async function handleIncomingMessage(
       await thread.post(result.fullStream);
       completedResponseText = (await result.text).trim();
     }
+    completedToolContext = await summarizeToolResults(result);
   } finally {
     await result.cleanup();
   }
@@ -403,6 +406,7 @@ async function handleIncomingMessage(
         sourceMessageId: message.id,
         userText,
         assistantText: completedResponseText,
+        toolContext: completedToolContext,
       }),
     });
   }
@@ -417,6 +421,39 @@ async function handleIncomingMessage(
         lastNotificationContext: null,
       },
     }).catch(() => {});
+  }
+}
+
+async function summarizeToolResults(result: unknown) {
+  const stepsPromise = (
+    result as {
+      steps?: PromiseLike<
+        Array<{
+          toolResults?: Array<{ toolName?: string; output?: unknown }>;
+        }>
+      >;
+    }
+  ).steps;
+
+  if (!stepsPromise) return "";
+
+  try {
+    const results = (await stepsPromise).flatMap((step) =>
+      (step.toolResults ?? []).map((toolResult) => ({
+        toolName: toolResult.toolName ?? "unknown",
+        output: toolResult.output,
+      })),
+    );
+    if (results.length === 0) return "";
+
+    return `Verified internal tool results from the previous turn. Reuse returned IDs and values when the user follows up; do not claim a new action from these historical results:\n${JSON.stringify(
+      results,
+    ).slice(0, MAX_PERSISTED_TOOL_CONTEXT_CHARS)}`;
+  } catch (error) {
+    logger.warn("Unable to persist bot tool context", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "";
   }
 }
 

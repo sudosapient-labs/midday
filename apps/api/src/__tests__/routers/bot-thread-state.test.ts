@@ -108,6 +108,8 @@ describe("persistent bot conversation context", () => {
         sourceMessageId: "message_1",
         userText: "Save these expenses",
         assistantText: "Which account should I use?",
+        toolContext:
+          'Verified internal tool results: {"toolName":"bank_accounts_list","id":"account_1"}',
         updatedAt: "2026-09-30T10:00:00.000Z",
       },
     );
@@ -118,6 +120,11 @@ describe("persistent bot conversation context", () => {
         role: "user",
         content: "Save these expenses",
         sourceMessageId: "message_1",
+      },
+      {
+        role: "assistant",
+        content:
+          'Verified internal tool results: {"toolName":"bank_accounts_list","id":"account_1"}',
       },
       { role: "assistant", content: "Which account should I use?" },
     ]);
