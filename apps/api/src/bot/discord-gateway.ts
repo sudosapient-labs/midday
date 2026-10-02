@@ -10,18 +10,16 @@ const RETRY_DELAY_MS = 5 * 1000;
 let listenerActive = false;
 let restartTimer: ReturnType<typeof setTimeout> | undefined;
 
-function isDiscordConfigured() {
+export function isDiscordGatewayConfigured() {
   return Boolean(
     process.env.DISCORD_BOT_TOKEN &&
       process.env.DISCORD_PUBLIC_KEY &&
-      process.env.DISCORD_APPLICATION_ID &&
-      process.env.DISCORD_GUILD_ID &&
-      process.env.DISCORD_CHANNEL_ID,
+      process.env.DISCORD_APPLICATION_ID,
   );
 }
 
 function scheduleGatewayRestart(delay = RETRY_DELAY_MS) {
-  if (!isDiscordConfigured() || listenerActive || restartTimer) {
+  if (!isDiscordGatewayConfigured() || listenerActive || restartTimer) {
     return;
   }
 
@@ -32,7 +30,7 @@ function scheduleGatewayRestart(delay = RETRY_DELAY_MS) {
 }
 
 async function startGatewaySession() {
-  if (!isDiscordConfigured() || listenerActive) {
+  if (!isDiscordGatewayConfigured() || listenerActive) {
     return;
   }
 
@@ -79,9 +77,9 @@ async function startGatewaySession() {
 
 /** Start the persistent Discord Gateway listener when Discord is configured. */
 export function startDiscordGateway() {
-  if (!isDiscordConfigured()) {
+  if (!isDiscordGatewayConfigured()) {
     logger.info(
-      "Discord Gateway disabled; configure Discord credentials, guild, and channel to enable it",
+      "Discord Gateway disabled; configure Discord credentials to enable it",
     );
     return;
   }

@@ -12,7 +12,7 @@ import {
   rememberThreadState,
 } from "@api/bot/thread-helpers";
 import type { BotThreadState } from "@api/bot/thread-state";
-import { db } from "@midday/db/client";
+import { type DatabaseOrTransaction, db } from "@midday/db/client";
 import {
   PlatformIdentityAlreadyLinkedToAnotherTeamError,
   PlatformIdentityAlreadyLinkedToAnotherUserError,
@@ -23,6 +23,7 @@ import {
   createOrUpdatePlatformIdentity,
   getPlatformIdentity,
   getTeamById,
+  hasTeamAccess,
 } from "@midday/db/queries";
 import type { Message, Thread } from "chat";
 
@@ -55,11 +56,13 @@ type PlatformResolverConfig = {
     thread: Thread<BotThreadState>;
   }) => string | undefined;
   afterConnect?: (params: {
+    db: DatabaseOrTransaction;
     token: { teamId: string; userId: string };
     externalUserId: string;
     message: Message;
     thread: Thread<BotThreadState>;
   }) => Promise<void>;
+  afterCommit?: (params: { thread: Thread<BotThreadState> }) => Promise<void>;
   platformErrors?: Array<{
     errorClass: new (...args: any[]) => Error;
     message: string;
@@ -82,34 +85,23 @@ export async function resolvePlatformLinkCode(
   const code = extractConnectionToken(config.provider, message?.text);
 
   if (code) {
-    const token = await consumePlatformLinkToken(db, {
-      provider: config.provider,
-      code,
-    });
-
-    if (token) {
-      if (!(await hasCurrentTeamAccess(token.teamId, token.userId))) {
-        await notifyTeamAccessRevoked(thread);
-        return { connected: false };
-      }
-
-      try {
-        if (config.afterConnect) {
-          await config.afterConnect({
-            token,
-            externalUserId,
-            message,
-            thread,
-          });
+    try {
+      const linked = await db.transaction(async (tx) => {
+        const token = await consumePlatformLinkToken(tx, {
+          provider: config.provider,
+          code,
+        });
+        if (!token) return null;
+        if (!(await hasTeamAccess(tx, token.teamId, token.userId))) {
+          throw new Error("BOT_TEAM_ACCESS_REVOKED");
         }
-
         const identityFields = config.buildIdentityFields({
           externalUserId,
           message,
           thread,
         });
 
-        const identity = await createOrUpdatePlatformIdentity(db, {
+        const identity = await createOrUpdatePlatformIdentity(tx, {
           provider: config.provider,
           teamId: token.teamId,
           userId: token.userId,
@@ -118,7 +110,17 @@ export async function resolvePlatformLinkCode(
           externalChannelId: identityFields.externalChannelId,
           metadata: identityFields.metadata,
         });
-
+        await config.afterConnect?.({
+          db: tx,
+          token,
+          externalUserId,
+          message,
+          thread,
+        });
+        return { token, identity };
+      });
+      if (linked) {
+        const { token, identity } = linked;
         const team = await getTeamById(db, token.teamId);
 
         await rememberThreadState(thread, {
@@ -128,6 +130,7 @@ export async function resolvePlatformLinkCode(
           externalUserId,
         });
 
+        await config.afterCommit?.({ thread });
         await thread.post(config.welcomeMessage(team?.name ?? "Midday"));
 
         return consumeResolvedConversation({
@@ -136,23 +139,30 @@ export async function resolvePlatformLinkCode(
           actingUserId: token.userId,
           identityId: identity.id,
         });
-      } catch (error) {
-        if (error instanceof PlatformSetupFailedError) {
-          await thread.post(error.message);
-          return { connected: false };
-        }
-
-        const platformMsg = mapPlatformLinkError(
-          error,
-          config.displayName,
-          config.platformErrors,
-        );
-        if (platformMsg) {
-          await thread.post(platformMsg);
-          return { connected: false };
-        }
-        throw error;
       }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "BOT_TEAM_ACCESS_REVOKED"
+      ) {
+        await notifyTeamAccessRevoked(thread);
+        return { connected: false };
+      }
+      if (error instanceof PlatformSetupFailedError) {
+        await thread.post(error.message);
+        return { connected: false };
+      }
+
+      const platformMsg = mapPlatformLinkError(
+        error,
+        config.displayName,
+        config.platformErrors,
+      );
+      if (platformMsg) {
+        await thread.post(platformMsg);
+        return { connected: false };
+      }
+      throw error;
     }
   }
 

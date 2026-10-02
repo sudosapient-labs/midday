@@ -28,7 +28,7 @@ import {
 } from "../schema";
 
 export const hasTeamAccess = async (
-  db: Database,
+  db: import("../client").DatabaseOrTransaction,
   teamId: string,
   userId: string,
 ): Promise<boolean> => {

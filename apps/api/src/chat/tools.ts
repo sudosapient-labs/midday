@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { MCPClient } from "@ai-sdk/mcp";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { createOpenAI } from "@ai-sdk/openai";
+import { isCancelledTask, isWriteToolName } from "@api/bot/action-intent";
 import { createMcpServer } from "@api/mcp/server";
 import type { McpContext } from "@api/mcp/types";
 import { expandScopes } from "@api/utils/scopes";
@@ -148,8 +149,14 @@ export function buildPrepareStep<T extends Record<string, Tool>>(options: {
 
   return (async (stepOptions: any) => {
     const step = await base(stepOptions);
-    if (step?.activeTools && always.length > 0) {
-      for (const name of always) {
+    if (step?.activeTools) {
+      const messages = (stepOptions.messages ?? []) as ModelMessage[];
+      const query = modelMessageText(messages);
+      step.activeTools = step.activeTools.filter((name) =>
+        permitsToolForIntent(String(name), query),
+      );
+      const required = getRequiredConversationTools(messages);
+      for (const name of [...required, ...always]) {
         if (!step.activeTools.includes(name)) {
           step.activeTools.push(name);
         }
@@ -244,21 +251,67 @@ function modelMessageText(messages: ModelMessage[]): string {
       );
     });
 
-  const latest = userTexts.at(-1) ?? "";
-  // Route from the current request whenever it names a domain. For short
-  // follow-ups such as “yes, save it” or “what about that?”, retain one prior
-  // turn so the required tool family is still available without allowing an
-  // old write request to contaminate every later question.
-  if (
-    /\b(?:account|balance|cash|category|customer|document|expense|invoice|money|payment|project|receipt|report|revenue|runway|spend|spent|tag|tax|team|time|transaction|tracker|save|create|update|delete|send)\b/iu.test(
-      latest,
+  const hasDomain = (text: string) =>
+    /\b(?:accounts?|balances?|cash|categor(?:y|ies)|customers?|documents?|expenses?|invoices?|money|payments?|projects?|receipts?|reports?|revenue|runway|spend(?:ing)?|spent|tags?|tax|teams?|time|transactions?|trackers?)\b/iu.test(
+      text,
+    );
+  const isContinuation = (text: string) =>
+    /^(?:yes|yep|yeah|ok(?:ay)?|sure|confirm(?:ed)?|do it|go ahead)\b/iu.test(
+      text.trim(),
     ) ||
-    userTexts.length < 2
-  ) {
+    /\b(?:it|them|those|these|that|instead|not|correction)\b/iu.test(text) ||
+    /^(?:use|choose|select)\b/iu.test(text.trim()) ||
+    // An action without a named business domain usually confirms the task the
+    // assistant just previewed (for example, “yes, save them”).
+    (/\b(?:save|create|update|delete|send)\b/iu.test(text) && !hasDomain(text));
+
+  const latest = userTexts.at(-1) ?? "";
+  if (isCancelledTask(latest)) return "cancelled";
+  const cancelledAt = userTexts.findLastIndex(isCancelledTask);
+  if (cancelledAt >= 0 && cancelledAt < userTexts.length - 1) {
+    return modelMessageText(
+      messages.slice(
+        messages.indexOf(
+          messages.filter((item) => item.role === "user")[cancelledAt + 1]!,
+        ),
+      ),
+    );
+  }
+
+  // An explicit domain starts a new task. Contextual replies retain enough
+  // prior user turns to preserve the task through confirmation and
+  // clarification chains without leaking an abandoned task into a topic
+  // switch such as “show my invoices”.
+  if ((hasDomain(latest) && !isContinuation(latest)) || userTexts.length < 2) {
     return latest;
   }
 
-  return userTexts.slice(-2).join(" ");
+  const taskStart = userTexts.findLastIndex(
+    (text, index) =>
+      index < userTexts.length - 1 && hasDomain(text) && !isContinuation(text),
+  );
+
+  const taskTexts = userTexts.slice(Math.max(taskStart, 0));
+  const start = taskTexts[0] ?? "";
+  // Correcting an unsaved create preview changes its arguments, not its
+  // operation. Once a successful write is in history, corrections are updates.
+  const startMessage = messages.filter((item) => item.role === "user")[
+    Math.max(taskStart, 0)
+  ];
+  const currentTaskMessages = startMessage
+    ? messages.slice(messages.indexOf(startMessage))
+    : messages;
+  const hasCompletedWrite = currentTaskMessages.some(
+    (item) =>
+      item.role === "assistant" &&
+      typeof item.content === "string" &&
+      item.content.startsWith("Verified internal tool results") &&
+      /transactions_create/u.test(item.content) &&
+      !/pending_approval|isError.*true/u.test(item.content),
+  );
+  if (!hasCompletedWrite && /\b(?:save|create|add|record|log)\b/iu.test(start))
+    return start;
+  return taskTexts.join(" ");
 }
 
 function lexicalTokens(text: string): Set<string> {
@@ -280,6 +333,77 @@ function lexicalTokens(text: string): Set<string> {
   return expanded;
 }
 
+function permitsToolForIntent(name: string, query: string) {
+  if (!isWriteToolName(name)) return true;
+  if (!matchesWriteDomain(name, query)) return false;
+
+  if (/(?:^|_)delete(?:_|$)/u.test(name)) {
+    return /\b(?:delete|remove|void)\b/iu.test(query);
+  }
+  if (/(?:^|_)cancel(?:_|$)/u.test(name))
+    return /\b(?:cancel|void)\b/iu.test(query);
+  if (/(?:^|_)mark(?:_|$)/u.test(name))
+    return /\b(?:mark|paid)\b/iu.test(query);
+  if (/(?:^|_)remind(?:_|$)/u.test(name))
+    return /\b(?:remind|reminder)\b/iu.test(query);
+  if (/(?:^|_)(?:assign|unassign)(?:_|$)/u.test(name))
+    return /\b(?:tag|assign|unassign|untag)\b/iu.test(query);
+  if (/(?:^|_)(?:update|upsert)(?:_|$)/u.test(name)) {
+    return /\b(?:categor(?:ize|ise)|change|correct|correction|edit|fix|update)\b/iu.test(
+      query,
+    );
+  }
+  if (/(?:^|_)(?:create|draft)(?:_|$)/u.test(name)) {
+    return /\b(?:add|book|create|draft|enter|log|record|save|store|track)\b/iu.test(
+      query,
+    );
+  }
+  if (/(?:^|_)send(?:_|$)/u.test(name)) {
+    return /\bsend\b/iu.test(query);
+  }
+  if (/(?:^|_)start(?:_|$)/u.test(name)) {
+    return /\bstart\b/iu.test(query);
+  }
+  if (/(?:^|_)sync(?:_|$)/u.test(name)) {
+    return /\bsync\b/iu.test(query);
+  }
+  if (/(?:^|_)export(?:_|$)/u.test(name)) {
+    return /\bexport\b/iu.test(query);
+  }
+  if (/(?:^|_)duplicate(?:_|$)/u.test(name)) {
+    return /\bduplicate\b/iu.test(query);
+  }
+  if (/(?:^|_)(?:confirm|decline|match|unmatch)(?:_|$)/u.test(name)) {
+    return /\b(?:confirm|decline|match|unmatch)\b/iu.test(query);
+  }
+  if (/(?:^|_)(?:pause|resume|stop|toggle)(?:_|$)/u.test(name)) {
+    return /\b(?:pause|resume|stop|toggle)\b/iu.test(query);
+  }
+
+  return false;
+}
+
+function matchesWriteDomain(name: string, query: string) {
+  const rules: Array<[RegExp, RegExp]> = [
+    [
+      /^transactions?_/u,
+      /\b(?:expenses?|payments?|purchases?|spend|spent|transactions?)\b/iu,
+    ],
+    [/^invoices?_/u, /\binvoices?\b/iu],
+    [/^bank_accounts?_/u, /\b(?:accounts?|balances?|bank|cash)\b/iu],
+    [/^customers?_/u, /\b(?:clients?|customers?)\b/iu],
+    [/^categories?_/u, /\bcategor(?:y|ies|ize|ise)\b/iu],
+    [/^documents?_/u, /\b(?:documents?|files?)\b/iu],
+    [/^document_tags?_/u, /\b(?:document tags?|tags?)\b/iu],
+    [/^inbox_/u, /\b(?:inbox|receipts?)\b/iu],
+    [/^tags?_/u, /\btags?\b/iu],
+    [/^tracker_/u, /\b(?:projects?|time|timers?|trackers?)\b/iu],
+    [/^accounting_/u, /\baccounting\b/iu],
+  ];
+  const matchingRule = rules.find(([prefix]) => prefix.test(name));
+  return matchingRule ? matchingRule[1].test(query) : false;
+}
+
 export function getRequiredLexicalTools(query: string): string[] {
   const hasTransactionContext =
     /\b(?:transactions?|expenses?|spend|spending|spent|payments?|purchases?|outlays?|balance|cash)\b/iu.test(
@@ -293,8 +417,14 @@ export function getRequiredLexicalTools(query: string): string[] {
   const isWrite =
     /\b(?:add|book|create|enter|log|record|save|store|track)\b/iu.test(query);
   const isCorrection =
-    /\b(?:change|correct|edit|fix|update|categor(?:ize|ise))\b/iu.test(query);
+    /\b(?:change|correct|correction|edit|fix|instead|not|update|categor(?:ize|ise))\b/iu.test(
+      query,
+    );
   const isDelete = /\b(?:delete|remove|void)\b/iu.test(query);
+  const isStrongCorrection =
+    /\b(?:change|correct|correction|edit|fix|update|categor(?:ize|ise))\b/iu.test(
+      query,
+    );
 
   if (isDelete) {
     return [
@@ -305,7 +435,7 @@ export function getRequiredLexicalTools(query: string): string[] {
     ];
   }
 
-  if (isCorrection) {
+  if (isCorrection && (isStrongCorrection || !isWrite)) {
     return [
       "categories_list",
       "bank_accounts_list",
@@ -339,6 +469,10 @@ export function getRequiredLexicalTools(query: string): string[] {
   return ["transactions_list", "transactions_get"];
 }
 
+export function getRequiredConversationTools(messages: ModelMessage[]) {
+  return getRequiredLexicalTools(modelMessageText(messages));
+}
+
 function selectToolsLexically(query: string, maxTools: number): string[] {
   const tokens = lexicalTokens(query);
   if (tokens.size === 0) return [];
@@ -359,7 +493,7 @@ function selectToolsLexically(query: string, maxTools: number): string[] {
 
       return { name: definition.name, score };
     })
-    .filter(({ score }) => score > 0)
+    .filter(({ name, score }) => score > 0 && permitsToolForIntent(name, query))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 
   const transactionTools = getRequiredLexicalTools(query);

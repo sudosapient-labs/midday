@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
-import type { Database } from "../client";
+import type { DatabaseOrTransaction } from "../client";
 import {
   PlatformIdentityAlreadyLinkedToAnotherTeamError,
   PlatformIdentityAlreadyLinkedToAnotherUserError,
@@ -17,7 +17,7 @@ export type PlatformProvider =
 type PlatformIdentityRecord = typeof platformIdentities.$inferSelect;
 
 export async function getPlatformIdentity(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     externalUserId: string;
@@ -40,7 +40,7 @@ export async function getPlatformIdentity(
 }
 
 export async function getPlatformIdentityForUser(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     teamId: string;
@@ -62,7 +62,10 @@ export async function getPlatformIdentityForUser(
   return result ?? null;
 }
 
-export async function getPlatformIdentityById(db: Database, id: string) {
+export async function getPlatformIdentityById(
+  db: DatabaseOrTransaction,
+  id: string,
+) {
   const [result] = await db
     .select()
     .from(platformIdentities)
@@ -73,7 +76,7 @@ export async function getPlatformIdentityById(db: Database, id: string) {
 }
 
 export async function listPlatformIdentitiesForTeam(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     teamId: string;
@@ -91,7 +94,7 @@ export async function listPlatformIdentitiesForTeam(
 }
 
 export async function createOrUpdatePlatformIdentity(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     teamId: string;
@@ -154,7 +157,7 @@ export async function createOrUpdatePlatformIdentity(
 }
 
 export async function updatePlatformIdentityMetadata(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     id: string;
     metadata: Record<string, unknown>;
@@ -182,7 +185,7 @@ export async function updatePlatformIdentityMetadata(
 }
 
 export async function deletePlatformIdentity(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     externalUserId: string;
@@ -204,7 +207,7 @@ export async function deletePlatformIdentity(
 }
 
 export async function deletePlatformIdentitiesForTeam(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     teamId: string;
     provider: PlatformProvider;
@@ -239,7 +242,7 @@ function generateLinkCode(): string {
 }
 
 export async function createPlatformLinkToken(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     teamId: string;
@@ -269,7 +272,7 @@ export async function createPlatformLinkToken(
 }
 
 export async function consumePlatformLinkToken(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     code: string;
@@ -294,7 +297,7 @@ export async function consumePlatformLinkToken(
 }
 
 export async function getPlatformLinkToken(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: {
     provider: PlatformProvider;
     code: string;
