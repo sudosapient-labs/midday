@@ -3,6 +3,42 @@ import { createLoggerWithContext } from "@midday/logger";
 const logger = createLoggerWithContext("discord-notifications");
 const DISCORD_MESSAGE_LIMIT = 2_000;
 
+// Resolve the destination at delivery time: stored inbox metadata can outlive
+// an installation or a channel restriction. Fail closed on Discord errors.
+export async function isAuthorizedDiscordDestination(
+  channelId: string,
+  guildId: string,
+) {
+  if (!guildId || !process.env.DISCORD_BOT_TOKEN) return false;
+  if (process.env.DISCORD_GUILD_ID && process.env.DISCORD_GUILD_ID !== guildId)
+    return false;
+  try {
+    const response = await fetch(
+      `https://discord.com/api/v10/channels/${encodeURIComponent(channelId)}`,
+      {
+        headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+      },
+    );
+    if (!response.ok) return false;
+    const channel = (await response.json()) as {
+      id?: string;
+      guild_id?: string;
+      parent_id?: string;
+      type?: number;
+    };
+    if (channel.id !== channelId || channel.guild_id !== guildId) return false;
+    const allowed = process.env.DISCORD_CHANNEL_ID;
+    const isThread = [10, 11, 12].includes(channel.type ?? -1);
+    return (
+      !allowed ||
+      channelId === allowed ||
+      (isThread && channel.parent_id === allowed)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function splitDiscordText(
   text: string,
   limit = DISCORD_MESSAGE_LIMIT,

@@ -17,7 +17,10 @@ import {
   updatePlatformIdentityMetadata,
 } from "@midday/db/queries";
 import { createLoggerWithContext } from "@midday/logger";
-import { sendDiscordTextNotification } from "./discord-notifications";
+import {
+  isAuthorizedDiscordDestination,
+  sendDiscordTextNotification,
+} from "./discord-notifications";
 import { sendSendblueTextNotification } from "./sendblue-notifications";
 import { sendTelegramTextNotification } from "./telegram-notifications";
 import {
@@ -559,6 +562,7 @@ async function sendImmediateMatchNotifications(
       return;
     }
 
+    if (!(await isAuthorizedDiscordDestination(channelId, guildId))) return;
     await sendDiscordTextNotification({
       channelId,
       text: buildPlainMatchText(payload),
@@ -665,7 +669,14 @@ async function sendSummaryToIdentity(
       return true;
     }
     case "discord": {
-      if (!identity.externalChannelId) {
+      if (
+        !identity.externalChannelId ||
+        !identity.externalTeamId ||
+        !(await isAuthorizedDiscordDestination(
+          identity.externalChannelId,
+          identity.externalTeamId,
+        ))
+      ) {
         return false;
       }
 
