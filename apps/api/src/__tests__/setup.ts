@@ -725,6 +725,9 @@ export const mocks = {
     }),
   ) as MockFn,
   claimBotMessage: mock(() => Promise.resolve(true)) as MockFn,
+  getBotMessage: mock(() => Promise.resolve(null)) as MockFn,
+  updateBotMessage: mock(() => Promise.resolve()) as MockFn,
+  failBotMessage: mock(() => Promise.resolve()) as MockFn,
   completeBotMessage: mock(() => Promise.resolve(true)) as MockFn,
   consumePlatformLinkToken: mock(() =>
     Promise.resolve({
@@ -1087,6 +1090,9 @@ const dbQueriesMock = new Proxy(
     addTelegramConnection: mocks.addTelegramConnection,
     addWhatsAppConnection: mocks.addWhatsAppConnection,
     claimBotMessage: mocks.claimBotMessage,
+    getBotMessage: mocks.getBotMessage,
+    updateBotMessage: mocks.updateBotMessage,
+    failBotMessage: mocks.failBotMessage,
     completeBotMessage: mocks.completeBotMessage,
     consumePlatformLinkToken: mocks.consumePlatformLinkToken,
     getApps: mocks.getApps,

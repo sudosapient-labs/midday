@@ -1,9 +1,10 @@
-// Regression coverage for the Discord audit findings at a42d5438.
+// Regression coverage for the second Discord audit and its remediation.
 // Run separately from other test files because Bun module mocks are process-global.
 import { beforeEach, expect, mock, test } from "bun:test";
 import { splitDiscordText } from "../../../packages/bot/src/discord-notifications";
 import { getPlatformInstructions } from "../../../packages/bot/src/platform-rules";
 import { mocks } from "../src/__tests__/setup";
+import { guardBotTools } from "../src/bot/tool-approval";
 
 let subscribed: any;
 let newMessage: any;
@@ -83,6 +84,9 @@ beforeEach(() => {
   delete process.env.DISCORD_CHANNEL_ID;
   assistant.mockClear();
   upload.mockClear();
+  mocks.getBotMessage.mockImplementation(async () => null);
+  mocks.updateBotMessage.mockImplementation(async () => {});
+  mocks.failBotMessage.mockImplementation(async () => {});
   mocks.consumePlatformLinkToken.mockClear();
   mocks.claimBotMessage.mockClear();
   mocks.claimBotMessage.mockImplementation(async () => true);
@@ -354,4 +358,190 @@ test("large tool results retain record IDs for later corrections", async () => {
   const context = JSON.stringify(assistant.mock.calls[1]?.[0].modelMessages);
   expect(context).toContain("last-transaction-id");
   expect(context).toContain("output.amount");
+});
+
+test("transient model failure releases the delivery for retry", async () => {
+  const claimed = new Set<string>();
+  mocks.claimBotMessage.mockImplementation(async (_db: unknown, key: any) => {
+    if (claimed.has(key.messageId)) return false;
+    claimed.add(key.messageId);
+    return true;
+  });
+  mocks.failBotMessage.mockImplementationOnce(
+    async (_db: unknown, key: any) => {
+      claimed.delete(key.messageId);
+    },
+  );
+  assistant.mockImplementationOnce(async () => {
+    throw new Error("transient model failure");
+  });
+  const t = thread();
+  const m = message("show balance", "discord-b", "retry-after-error");
+  await subscribed(t, m);
+  await subscribed(t, m);
+  expect(assistant).toHaveBeenCalledTimes(2);
+  expect(t.post.mock.calls.map(([text]: any[]) => text).join(" ")).toContain(
+    "Done.",
+  );
+});
+
+test("attachment-only turn retains receipt context on follow-up", async () => {
+  const t = thread();
+  const m: any = message("", "discord-b", "receipt-context");
+  upload.mockImplementationOnce(async () => ({
+    inboxId: "uploaded-receipt-id",
+  }));
+  m.attachments = [
+    {
+      type: "file",
+      mimeType: "application/pdf",
+      name: "receipt.pdf",
+      data: new Uint8Array([1]),
+    },
+  ];
+  await subscribed(t, m);
+  await subscribed(
+    t,
+    message("explain that receipt", "discord-b", "receipt-followup"),
+  );
+  expect(JSON.stringify(assistant.mock.calls[0]?.[0].modelMessages)).toContain(
+    "Receipt uploaded",
+  );
+  expect(t.state.conversationContexts).toBeDefined();
+  expect(JSON.stringify(assistant.mock.calls[0]?.[0].modelMessages)).toContain(
+    "uploaded-receipt-id",
+  );
+});
+
+test("runtime previews a corrected expense and executes only after the delivered preview is confirmed", async () => {
+  const execute = mock(async (input: any) => ({
+    success: true,
+    data: { id: "expense-id", amount: input.amount },
+  }));
+  assistant.mockImplementation(async (params: any) => {
+    const tool = (
+      guardBotTools(
+        { transactions_create_bulk: { execute } } as any,
+        params.botApproval,
+      ) as any
+    ).transactions_create_bulk;
+    const input = {
+      name: "water",
+      amount: params.botApproval.userText.includes("0.55") ? 0.55 : 55,
+    };
+    const output = await tool.execute(input, {});
+    return {
+      text: Promise.resolve(
+        output.status === "pending_approval"
+          ? "Preview"
+          : "Saved 55 for water.",
+      ),
+      fullStream: "",
+      steps: Promise.resolve([
+        { toolResults: [{ toolName: "transactions_create_bulk", output }] },
+      ]),
+      cleanup: async () => {},
+    } as any;
+  });
+  const t = thread();
+  await subscribed(
+    t,
+    message("Save expenses 0.55 water", "discord-b", "preview-1"),
+  );
+  expect(execute).not.toHaveBeenCalled();
+  expect(t.post.mock.calls.at(-1)?.[0]).toContain("0.55");
+  await subscribed(t, message("correct it to 55", "discord-b", "preview-2"));
+  expect(execute).not.toHaveBeenCalled();
+  expect(t.post.mock.calls.at(-1)?.[0]).toContain("amount: 55");
+  await subscribed(t, message("yes, save them", "discord-b", "preview-3"));
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(execute).toHaveBeenCalledWith({ name: "water", amount: 55 }, {});
+  expect(t.post.mock.calls.at(-1)?.[0]).toContain("Saved 55");
+  assistant.mockImplementation(async () => ({
+    text: Promise.resolve("Done."),
+    fullStream: "Done.",
+    cleanup: async () => {},
+  }));
+});
+
+test("bulk tool output retains later IDs before descriptions", async () => {
+  const t = thread();
+  assistant.mockImplementationOnce(async () => ({
+    text: Promise.resolve("Saved expenses."),
+    fullStream: "Saved expenses.",
+    steps: Promise.resolve([
+      {
+        toolResults: [
+          {
+            toolName: "transactions_create_bulk",
+            output: {
+              data: Array.from({ length: 30 }, (_, i) => ({
+                description: "x".repeat(800),
+                id: `record-${i}`,
+                amount: i,
+                currency: "USD",
+              })),
+            },
+          },
+        ],
+      },
+    ]),
+    cleanup: async () => {},
+  }));
+  await subscribed(t, message("save expenses", "discord-b", "bulk-first"));
+  await subscribed(
+    t,
+    message("correct the last expense", "discord-b", "bulk-second"),
+  );
+  expect(JSON.stringify(assistant.mock.calls[1]?.[0].modelMessages)).toContain(
+    "record-29",
+  );
+});
+
+test("tool compaction retains MCP error status when data has an ID", async () => {
+  const { compactVerifiedToolOutput } = await import("../src/bot/runtime");
+  const result = compactVerifiedToolOutput({
+    isError: true,
+    content: [{ type: "text", text: "Update rejected: permission denied" }],
+    structuredContent: { data: { id: "unchanged-record" } },
+  });
+  expect(JSON.stringify(result)).toContain("unchanged-record");
+  expect(JSON.stringify(result)).toContain("isError");
+  expect(JSON.stringify(result)).toContain("permission denied");
+});
+
+test("tool compaction retains camelCase IDs, ID arrays, and error explanations", async () => {
+  const { compactVerifiedToolOutput } = await import("../src/bot/runtime");
+  const summary = JSON.stringify(
+    compactVerifiedToolOutput({
+      transactionId: "transaction-camel",
+      entityIds: ["record-one", "record-two"],
+      isError: true,
+      errorMessage: "permission denied",
+    }),
+  );
+  for (const value of [
+    "transaction-camel",
+    "record-one",
+    "record-two",
+    "isError",
+    "permission denied",
+  ])
+    expect(summary).toContain(value);
+});
+
+test("failed identity linking does not run app setup", async () => {
+  mocks.consumePlatformLinkToken.mockImplementationOnce(async () => ({
+    teamId: "team-b",
+    userId: "user-b",
+    code: "abc12345",
+    provider: "discord",
+  }));
+  mocks.addDiscordConnection.mockClear();
+  mocks.createOrUpdatePlatformIdentity.mockImplementationOnce(async () => {
+    throw new Error("identity ownership conflict");
+  });
+  await newMessage(thread(), message("Connect to Midday: abc12345"));
+  expect(mocks.consumePlatformLinkToken).toHaveBeenCalled();
+  expect(mocks.addDiscordConnection).not.toHaveBeenCalled();
 });

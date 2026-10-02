@@ -1,4 +1,5 @@
 import type { BotPlatform } from "@midday/bot";
+import type { PendingBotAction } from "./tool-approval";
 
 export type BotThreadState = {
   teamId?: string;
@@ -7,6 +8,7 @@ export type BotThreadState = {
   externalUserId?: string;
   conversationContexts?: Record<string, BotConversationContext>;
   processedMessageIds?: Record<string, string[]>;
+  pendingActions?: Record<string, PendingBotAction[]>;
 };
 
 export type BotConversationMessage = {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { MCPClient } from "@ai-sdk/mcp";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { createOpenAI } from "@ai-sdk/openai";
+import { isCancelledTask, isWriteToolName } from "@api/bot/action-intent";
 import { createMcpServer } from "@api/mcp/server";
 import type { McpContext } from "@api/mcp/types";
 import { expandScopes } from "@api/utils/scopes";
@@ -265,6 +266,17 @@ function modelMessageText(messages: ModelMessage[]): string {
     (/\b(?:save|create|update|delete|send)\b/iu.test(text) && !hasDomain(text));
 
   const latest = userTexts.at(-1) ?? "";
+  if (isCancelledTask(latest)) return "cancelled";
+  const cancelledAt = userTexts.findLastIndex(isCancelledTask);
+  if (cancelledAt >= 0 && cancelledAt < userTexts.length - 1) {
+    return modelMessageText(
+      messages.slice(
+        messages.indexOf(
+          messages.filter((item) => item.role === "user")[cancelledAt + 1]!,
+        ),
+      ),
+    );
+  }
 
   // An explicit domain starts a new task. Contextual replies retain enough
   // prior user turns to preserve the task through confirmation and
@@ -279,7 +291,27 @@ function modelMessageText(messages: ModelMessage[]): string {
       index < userTexts.length - 1 && hasDomain(text) && !isContinuation(text),
   );
 
-  return userTexts.slice(Math.max(taskStart, 0)).join(" ");
+  const taskTexts = userTexts.slice(Math.max(taskStart, 0));
+  const start = taskTexts[0] ?? "";
+  // Correcting an unsaved create preview changes its arguments, not its
+  // operation. Once a successful write is in history, corrections are updates.
+  const startMessage = messages.filter((item) => item.role === "user")[
+    Math.max(taskStart, 0)
+  ];
+  const currentTaskMessages = startMessage
+    ? messages.slice(messages.indexOf(startMessage))
+    : messages;
+  const hasCompletedWrite = currentTaskMessages.some(
+    (item) =>
+      item.role === "assistant" &&
+      typeof item.content === "string" &&
+      item.content.startsWith("Verified internal tool results") &&
+      /transactions_create/u.test(item.content) &&
+      !/pending_approval|isError.*true/u.test(item.content),
+  );
+  if (!hasCompletedWrite && /\b(?:save|create|add|record|log)\b/iu.test(start))
+    return start;
+  return taskTexts.join(" ");
 }
 
 function lexicalTokens(text: string): Set<string> {
@@ -301,12 +333,6 @@ function lexicalTokens(text: string): Set<string> {
   return expanded;
 }
 
-function isWriteToolName(name: string) {
-  return /(?:^|_)(?:confirm|create|decline|delete|draft|duplicate|export|match|pause|resume|send|start|stop|sync|toggle|unmatch|update|upsert)(?:_|$)/u.test(
-    name,
-  );
-}
-
 function permitsToolForIntent(name: string, query: string) {
   if (!isWriteToolName(name)) return true;
   if (!matchesWriteDomain(name, query)) return false;
@@ -314,6 +340,14 @@ function permitsToolForIntent(name: string, query: string) {
   if (/(?:^|_)delete(?:_|$)/u.test(name)) {
     return /\b(?:delete|remove|void)\b/iu.test(query);
   }
+  if (/(?:^|_)cancel(?:_|$)/u.test(name))
+    return /\b(?:cancel|void)\b/iu.test(query);
+  if (/(?:^|_)mark(?:_|$)/u.test(name))
+    return /\b(?:mark|paid)\b/iu.test(query);
+  if (/(?:^|_)remind(?:_|$)/u.test(name))
+    return /\b(?:remind|reminder)\b/iu.test(query);
+  if (/(?:^|_)(?:assign|unassign)(?:_|$)/u.test(name))
+    return /\b(?:tag|assign|unassign|untag)\b/iu.test(query);
   if (/(?:^|_)(?:update|upsert)(?:_|$)/u.test(name)) {
     return /\b(?:categor(?:ize|ise)|change|correct|correction|edit|fix|update)\b/iu.test(
       query,
