@@ -1,9 +1,12 @@
 import { eq, sql } from "drizzle-orm";
-import type { Database } from "../client";
+import type { DatabaseOrTransaction } from "../client";
 import { DiscordInstallationAlreadyLinkedError } from "../errors";
 import { discordInstallations } from "../schema";
 
-export async function getDiscordInstallation(db: Database, guildId: string) {
+export async function getDiscordInstallation(
+  db: DatabaseOrTransaction,
+  guildId: string,
+) {
   const [installation] = await db
     .select()
     .from(discordInstallations)
@@ -14,7 +17,7 @@ export async function getDiscordInstallation(db: Database, guildId: string) {
 }
 
 export async function claimDiscordInstallation(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: { guildId: string; teamId: string; createdBy: string },
 ) {
   await db

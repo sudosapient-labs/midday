@@ -680,7 +680,7 @@ describe("bot runtime link-code consumption", () => {
     }
   });
 
-  test("afterConnect failure does not leave an orphaned identity (WhatsApp)", async () => {
+  test("setup failure occurs inside the linking transaction (WhatsApp)", async () => {
     const { posts, thread } = createThread("whatsapp");
     const message = {
       id: "message_123",
@@ -701,11 +701,11 @@ describe("bot runtime link-code consumption", () => {
     expect(posts).toEqual([
       "Connected, but I couldn't finish setup. Try again.",
     ]);
-    expect(mocks.createOrUpdatePlatformIdentity).not.toHaveBeenCalled();
+    expect(mocks.createOrUpdatePlatformIdentity).toHaveBeenCalled();
     expect(streamMiddayAssistantMock).not.toHaveBeenCalled();
   });
 
-  test("afterConnect failure does not leave an orphaned identity (Telegram)", async () => {
+  test("setup failure occurs inside the linking transaction (Telegram)", async () => {
     const { posts, thread } = createThread("telegram");
     const message = {
       id: "message_123",
@@ -736,7 +736,7 @@ describe("bot runtime link-code consumption", () => {
     expect(posts).toEqual([
       "Connected, but I couldn't finish setup. Try again.",
     ]);
-    expect(mocks.createOrUpdatePlatformIdentity).not.toHaveBeenCalled();
+    expect(mocks.createOrUpdatePlatformIdentity).toHaveBeenCalled();
     expect(streamMiddayAssistantMock).not.toHaveBeenCalled();
   });
 
