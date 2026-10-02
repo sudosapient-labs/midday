@@ -694,7 +694,7 @@ export const bankAccounts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
-    createdBy: uuid("created_by"),
+    createdBy: uuid("created_by").notNull(),
     teamId: uuid("team_id").notNull(),
     name: text(),
     currency: text(),
@@ -1964,7 +1964,7 @@ export const discordInstallations = pgTable(
     id: uuid().defaultRandom().primaryKey().notNull(),
     guildId: text("guild_id").notNull(),
     teamId: uuid("team_id").notNull(),
-    createdBy: uuid("created_by").notNull(),
+    createdBy: uuid("created_by"),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "string",
@@ -2009,6 +2009,15 @@ export const botMessageLedger = pgTable(
     externalUserId: text("external_user_id").notNull(),
     messageId: text("message_id").notNull(),
     status: text().default("started").notNull(),
+    attemptId: text("attempt_id"),
+    leaseUntil: timestamp("lease_until", {
+      withTimezone: true,
+      mode: "string",
+    }),
+    executionStarted: boolean("execution_started").default(false).notNull(),
+    responseText: text("response_text"),
+    toolContext: text("tool_context"),
+    deliveredChunks: integer("delivered_chunks").default(0).notNull(),
     completedAt: timestamp("completed_at", {
       withTimezone: true,
       mode: "string",
