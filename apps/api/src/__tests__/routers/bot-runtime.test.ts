@@ -73,6 +73,7 @@ mock.module("@midday/bot", () => ({
   getPlatformInstructions: mock(() => ""),
   isSupportedInboxUploadMediaType: mock(() => false),
   processInboxUpload: mock(() => Promise.resolve(null)),
+  splitDiscordText: (text: string) => [text],
 }));
 
 const {
@@ -654,11 +655,15 @@ describe("bot runtime link-code consumption", () => {
 
       expect(posts).toEqual(["Your bank balance is $12,345."]);
       expect(cleanup).toHaveBeenCalled();
-      expect(toAiMessagesMock).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ id: "message_123" }),
-        ]),
-        expect.objectContaining({ includeNames: true }),
+      expect(streamMiddayAssistantMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelMessages: [
+            {
+              role: "user",
+              content: "what is my bank balance?",
+            },
+          ],
+        }),
       );
     } finally {
       if (originalGuildId === undefined) {
@@ -675,7 +680,7 @@ describe("bot runtime link-code consumption", () => {
     }
   });
 
-  test("afterConnect failure does not leave an orphaned identity (WhatsApp)", async () => {
+  test("setup failure occurs inside the linking transaction (WhatsApp)", async () => {
     const { posts, thread } = createThread("whatsapp");
     const message = {
       id: "message_123",
@@ -696,11 +701,11 @@ describe("bot runtime link-code consumption", () => {
     expect(posts).toEqual([
       "Connected, but I couldn't finish setup. Try again.",
     ]);
-    expect(mocks.createOrUpdatePlatformIdentity).not.toHaveBeenCalled();
+    expect(mocks.createOrUpdatePlatformIdentity).toHaveBeenCalled();
     expect(streamMiddayAssistantMock).not.toHaveBeenCalled();
   });
 
-  test("afterConnect failure does not leave an orphaned identity (Telegram)", async () => {
+  test("setup failure occurs inside the linking transaction (Telegram)", async () => {
     const { posts, thread } = createThread("telegram");
     const message = {
       id: "message_123",
@@ -731,7 +736,7 @@ describe("bot runtime link-code consumption", () => {
     expect(posts).toEqual([
       "Connected, but I couldn't finish setup. Try again.",
     ]);
-    expect(mocks.createOrUpdatePlatformIdentity).not.toHaveBeenCalled();
+    expect(mocks.createOrUpdatePlatformIdentity).toHaveBeenCalled();
     expect(streamMiddayAssistantMock).not.toHaveBeenCalled();
   });
 

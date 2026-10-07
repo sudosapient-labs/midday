@@ -6,6 +6,7 @@ import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import { resolveRedisUrl } from "@midday/cache/shared-redis";
 import { Chat } from "chat";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
+import { MIDDAY_BOT_CONCURRENCY } from "./concurrency";
 
 export function createMiddayBot() {
   const adapters = {
@@ -37,10 +38,7 @@ export function createMiddayBot() {
     userName: "midday",
     adapters: typedAdapters,
     state: createRedisState({ url: resolveRedisUrl() }),
-    concurrency: {
-      strategy: "debounce",
-      debounceMs: 1500,
-    },
+    concurrency: MIDDAY_BOT_CONCURRENCY,
   });
 }
 

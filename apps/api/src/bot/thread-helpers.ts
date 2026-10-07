@@ -22,7 +22,7 @@ export async function rememberThreadState(
 }
 
 export async function forgetThreadState(thread: Thread<BotThreadState>) {
-  await thread.setState({});
+  await thread.setState({}, { replace: true });
 }
 
 export async function notifyTeamAccessRevoked(thread: Thread<BotThreadState>) {

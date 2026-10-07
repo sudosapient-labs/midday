@@ -60,3 +60,12 @@ export class PlatformIdentityAlreadyLinkedToAnotherTeamError extends Error {
     this.name = "PlatformIdentityAlreadyLinkedToAnotherTeamError";
   }
 }
+
+export class DiscordInstallationAlreadyLinkedError extends Error {
+  code = "DISCORD_INSTALLATION_ALREADY_LINKED" as const;
+
+  constructor() {
+    super("Discord server is already linked to another team");
+    this.name = "DiscordInstallationAlreadyLinkedError";
+  }
+}

@@ -5,12 +5,13 @@ import type {
   TelegramConnection,
   WhatsAppConnection,
 } from "../app-config";
-import type { Database } from "../client";
+import type { DatabaseOrTransaction } from "../client";
 import {
   TelegramAlreadyConnectedToAnotherTeamError,
   WhatsAppAlreadyConnectedToAnotherTeamError,
 } from "../errors";
 import { apps, platformIdentities, usersOnTeam } from "../schema";
+import { claimDiscordInstallation } from "./discord-installations";
 
 export type AppRecord<TAppId extends string = string> = Omit<
   typeof apps.$inferSelect,
@@ -29,7 +30,7 @@ export type CreateAppParams<TAppId extends string = string> = {
 };
 
 export const createApp = async <TAppId extends string>(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: CreateAppParams<TAppId>,
 ): Promise<AppRecord<TAppId> | undefined> => {
   const [result] = await db
@@ -59,7 +60,7 @@ type AppSetting = {
   [key: string]: unknown;
 };
 
-export const getApps = async (db: Database, teamId: string) => {
+export const getApps = async (db: DatabaseOrTransaction, teamId: string) => {
   const result = await db
     .select({
       app_id: apps.appId,
@@ -78,7 +79,7 @@ export type GetAppByAppIdParams<TAppId extends string = string> = {
 };
 
 export const getAppByAppId = async <TAppId extends string>(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: GetAppByAppIdParams<TAppId>,
 ): Promise<AppRecord<TAppId> | null> => {
   const [result] = await db
@@ -96,7 +97,7 @@ export type GetAppBySlackTeamIdParams = {
 };
 
 export const getAppBySlackTeamId = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: GetAppBySlackTeamIdParams,
 ) => {
   const { slackTeamId, channelId } = params;
@@ -165,7 +166,7 @@ export type DisconnectAppParams = {
 };
 
 export const disconnectApp = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: DisconnectAppParams,
 ) => {
   const { appId, teamId } = params;
@@ -204,7 +205,7 @@ export type UpdateAppSettingsParams = {
 };
 
 export const updateAppSettings = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: UpdateAppSettingsParams,
 ) => {
   const { appId, teamId, option } = params;
@@ -259,7 +260,7 @@ export type UpdateAppSettingsBulkParams = {
  * Update all settings for an app at once
  */
 export const updateAppSettingsBulk = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: UpdateAppSettingsBulkParams,
 ) => {
   const { appId, teamId, settings } = params;
@@ -286,7 +287,10 @@ export type DeleteAppParams = {
 /**
  * Delete an app (alias for disconnectApp for semantic clarity)
  */
-export const deleteApp = async (db: Database, params: DeleteAppParams) => {
+export const deleteApp = async (
+  db: DatabaseOrTransaction,
+  params: DeleteAppParams,
+) => {
   return disconnectApp(db, params);
 };
 
@@ -295,7 +299,7 @@ export const deleteApp = async (db: Database, params: DeleteAppParams) => {
  * Searches all WhatsApp app installations for a matching phone number in connections
  */
 export const getAppByWhatsAppNumber = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   phoneNumber: string,
 ) => {
   const results = (await db
@@ -323,7 +327,7 @@ export type AddWhatsAppConnectionParams = {
  * Creates the WhatsApp app if it doesn't exist, or adds to existing connections
  */
 export const addWhatsAppConnection = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: AddWhatsAppConnectionParams,
 ) => {
   const { teamId, phoneNumber, displayName, createdBy: linkingUserId } = params;
@@ -405,7 +409,7 @@ export type RemoveWhatsAppConnectionParams = {
  * Remove a WhatsApp connection from a team
  */
 export const removeWhatsAppConnection = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: RemoveWhatsAppConnectionParams,
 ) => {
   const { teamId, phoneNumber } = params;
@@ -460,7 +464,10 @@ export const removeWhatsAppConnection = async (
 /**
  * Get all WhatsApp connections for a team
  */
-export const getWhatsAppConnections = async (db: Database, teamId: string) => {
+export const getWhatsAppConnections = async (
+  db: DatabaseOrTransaction,
+  teamId: string,
+) => {
   const app = await getAppByAppId(db, { appId: "whatsapp", teamId });
 
   if (!app) {
@@ -472,7 +479,7 @@ export const getWhatsAppConnections = async (db: Database, teamId: string) => {
 };
 
 export const getAppByTelegramUserId = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   telegramUserId: string,
 ) => {
   const results = (await db
@@ -498,7 +505,7 @@ export type AddTelegramConnectionParams = {
 };
 
 export const addTelegramConnection = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: AddTelegramConnectionParams,
 ) => {
   const {
@@ -574,7 +581,10 @@ export const addTelegramConnection = async (
   return result as AppRecord<"telegram">;
 };
 
-export const getTelegramConnections = async (db: Database, teamId: string) => {
+export const getTelegramConnections = async (
+  db: DatabaseOrTransaction,
+  teamId: string,
+) => {
   const app = await getAppByAppId(db, { appId: "telegram", teamId });
 
   if (!app) {
@@ -601,7 +611,7 @@ export type AddDiscordConnectionParams = {
  * notification settings in the dashboard.
  */
 export const addDiscordConnection = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: AddDiscordConnectionParams,
 ) => {
   const {
@@ -613,6 +623,24 @@ export const addDiscordConnection = async (
     displayName,
     createdBy: linkingUserId,
   } = params;
+
+  let createdBy = linkingUserId;
+  if (!createdBy) {
+    const [firstMember] = await db
+      .select({ userId: usersOnTeam.userId })
+      .from(usersOnTeam)
+      .where(eq(usersOnTeam.teamId, teamId))
+      .limit(1);
+    createdBy = firstMember?.userId;
+  }
+
+  if (!createdBy) {
+    return undefined;
+  }
+
+  if (guildId) {
+    await claimDiscordInstallation(db, { guildId, teamId, createdBy });
+  }
 
   const newConnection: DiscordConnection = {
     userId,
@@ -647,14 +675,6 @@ export const addDiscordConnection = async (
     return result as AppRecord<"discord"> | undefined;
   }
 
-  const firstMember = await db
-    .select({ userId: usersOnTeam.userId })
-    .from(usersOnTeam)
-    .where(eq(usersOnTeam.teamId, teamId))
-    .limit(1);
-
-  const createdBy = linkingUserId || firstMember[0]?.userId || teamId;
-
   const [result] = await db
     .insert(apps)
     .values({
@@ -687,7 +707,7 @@ export type UpdateAppTokensParams = {
  * Uses JSONB merge to preserve other config fields
  */
 export const updateAppTokens = async (
-  db: Database,
+  db: DatabaseOrTransaction,
   params: UpdateAppTokensParams,
 ) => {
   const { teamId, appId, accessToken, refreshToken, expiresAt } = params;

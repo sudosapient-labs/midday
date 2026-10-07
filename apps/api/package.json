@@ -6,10 +6,11 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --exit --timeout 30000 --preload ./src/__tests__/setup.ts src/__tests__/trpc/ src/__tests__/routers/bot-linking.test.ts src/__tests__/routers/bot-thread-state.test.ts src/__tests__/routers/invoices.test.ts src/__tests__/routers/transactions.test.ts src/utils/trpc-error.test.ts src/utils/request-trace.test.ts && bun test --exit --timeout 30000 src/__tests__/routers/bot-runtime.test.ts && bun test --exit --timeout 30000 src/__tests__/routers/slack-oauth-callback.test.ts && bun test --exit --timeout 30000 src/__tests__/mcp/mcp-router.test.ts",
+    "test": "bun test --exit --timeout 30000 --preload ./src/__tests__/setup.ts src/__tests__/trpc/ src/__tests__/routers/bot-linking.test.ts src/__tests__/routers/bot-thread-state.test.ts src/__tests__/routers/invoices.test.ts src/__tests__/routers/transactions.test.ts src/utils/trpc-error.test.ts src/utils/request-trace.test.ts && bun test --exit --timeout 30000 src/__tests__/routers/bot-runtime.test.ts && bun test --exit --timeout 30000 src/__tests__/routers/slack-oauth-callback.test.ts && bun test --exit --timeout 30000 src/__tests__/mcp/mcp-router.test.ts && bun run test:discord",
     "test:e2e": "bun test --exit --timeout 30000 src/__tests__/e2e/",
     "eval": "bunx evalite watch",
-    "eval:run": "bunx evalite"
+    "eval:run": "bunx evalite",
+    "test:discord": "bun test --exit src/__tests__/routers/bot-tool-approval.test.ts && bun test --exit audits/discord-reaudit.test.ts && bun test --exit audits/discord-reaudit-routing.test.ts && bun test --exit audits/discord-reaudit-notifications.test.ts && bun test --exit ../../packages/bot/src/discord-notifications.test.ts"
   },
   "exports": {
     "./trpc/routers/_app": "./src/trpc/routers/_app.ts"

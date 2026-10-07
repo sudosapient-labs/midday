@@ -5,8 +5,10 @@ import {
 import type { Database } from "@midday/db/client";
 import {
   getAppByAppId,
+  getDiscordInstallation,
   getPlatformIdentity,
   getPlatformIdentityById,
+  hasTeamAccess,
   listDueProviderNotificationBatches,
   listPlatformIdentitiesForTeam,
   markProviderNotificationBatchSent,
@@ -15,7 +17,10 @@ import {
   updatePlatformIdentityMetadata,
 } from "@midday/db/queries";
 import { createLoggerWithContext } from "@midday/logger";
-import { sendDiscordTextNotification } from "./discord-notifications";
+import {
+  isAuthorizedDiscordDestination,
+  sendDiscordTextNotification,
+} from "./discord-notifications";
 import { sendSendblueTextNotification } from "./sendblue-notifications";
 import { sendTelegramTextNotification } from "./telegram-notifications";
 import {
@@ -134,6 +139,7 @@ export type SendToProvidersOptions = {
       messageTs?: string;
       phoneNumber?: string;
       externalUserId?: string;
+      guildId?: string;
     };
   };
 };
@@ -207,6 +213,25 @@ export async function flushDueActivityNotificationBatches(db: Database) {
     if (!identity) {
       await markProviderNotificationBatchSent(db, { id: batch.id });
       continue;
+    }
+
+    if (
+      identity.teamId !== batch.teamId ||
+      identity.userId !== batch.userId ||
+      !(await hasTeamAccess(db, batch.teamId, batch.userId))
+    ) {
+      await markProviderNotificationBatchSent(db, { id: batch.id });
+      continue;
+    }
+
+    if (identity.provider === "discord") {
+      const installation = identity.externalTeamId
+        ? await getDiscordInstallation(db, identity.externalTeamId)
+        : null;
+      if (!installation || installation.teamId !== batch.teamId) {
+        await markProviderNotificationBatchSent(db, { id: batch.id });
+        continue;
+      }
     }
 
     const app = await getAppConfig(db, batch.provider, batch.teamId);
@@ -502,26 +527,58 @@ async function sendImmediateMatchNotifications(
   if (source === "discord") {
     const channelId = options?.inboxMeta?.sourceMetadata?.channelId;
     const externalUserId = options?.inboxMeta?.sourceMetadata?.externalUserId;
+    const guildId = options?.inboxMeta?.sourceMetadata?.guildId;
 
-    if (!channelId) {
+    if (!channelId || !externalUserId || !guildId) {
       return;
     }
 
-    if (externalUserId) {
-      await sendPlainTextMatchNotification({
-        db,
+    const [identity, installation, app] = await Promise.all([
+      getPlatformIdentity(db, {
         provider: "discord",
-        sendFn: (text) => sendDiscordTextNotification({ channelId, text }),
         externalUserId,
+        externalTeamId: guildId,
+      }),
+      getDiscordInstallation(db, guildId),
+      getAppConfig(db, "discord", teamId),
+    ]);
+
+    if (
+      !identity ||
+      identity.teamId !== teamId ||
+      !installation ||
+      installation.teamId !== teamId ||
+      !app ||
+      !isSettingEnabled(app, "match") ||
+      !(await hasTeamAccess(db, teamId, identity.userId)) ||
+      !(await shouldSendNotification(
+        db,
+        identity.userId,
         teamId,
-        payload,
-      });
-    } else {
-      await sendDiscordTextNotification({
-        channelId,
-        text: buildPlainMatchText(payload),
-      });
+        "inbox_auto_matched",
+        "in_app",
+      ))
+    ) {
+      return;
     }
+
+    if (!(await isAuthorizedDiscordDestination(channelId, guildId))) return;
+    await sendDiscordTextNotification({
+      channelId,
+      text: buildPlainMatchText(payload),
+    });
+    await updatePlatformIdentityMetadata(db, {
+      id: identity.id,
+      metadata: {
+        lastNotificationContext: buildMatchContext(
+          identity.userId,
+          teamId,
+          "discord",
+          payload,
+        ),
+        lastNotificationSentAt: new Date().toISOString(),
+      },
+    });
   }
 }
 
@@ -612,7 +669,14 @@ async function sendSummaryToIdentity(
       return true;
     }
     case "discord": {
-      if (!identity.externalChannelId) {
+      if (
+        !identity.externalChannelId ||
+        !identity.externalTeamId ||
+        !(await isAuthorizedDiscordDestination(
+          identity.externalChannelId,
+          identity.externalTeamId,
+        ))
+      ) {
         return false;
       }
 

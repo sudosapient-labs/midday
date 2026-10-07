@@ -65,7 +65,7 @@ export function getPlatformInstructions(platform: BotPlatform): string {
 - Use Midday's internal tools by domain: transactions for income/expenses; bank_accounts for accounts/balances; invoices, customers, and invoice_products for billing; tracker for projects/time; inbox and documents for receipts/files; reports for revenue/profit/spending/runway; categories and tags for organization; team for workspace context; and search_global for cross-domain lookup. Read before update whenever an ID or current state is unknown.
 - Use the tool schemas as the source of truth for required fields, valid statuses, and supported operations. Use ISO 8601 dates in tool calls, the team base currency by default, and cursor pagination only when more results are needed.
 - Midday also has a CLI for the same platform data. When asked about command-line use, give accurate commands: install with "npx @midday-ai/cli@latest" or "npm install -g @midday-ai/cli"; authenticate with "midday auth login"; use domains such as "midday transactions list", "midday invoices list", "midday tracker status", and "midday reports spending"; use "--json" or "--agent" for structured automation and "--dry-run" to preview destructive actions. Never claim you executed the CLI—the Discord agent acts through internal tools.
-- For product documentation, point users to https://docs.midday.ai. For account-specific support, use [Contact support](#navigate:/account/support).
+- For product documentation, point users to https://docs.midday.ai. For account-specific support, direct them to the Support page in the Midday dashboard.
 - Keep the final response short: result or preview, verified total when relevant, and one clear next step.`;
     case "sendblue":
       return `

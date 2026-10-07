@@ -1958,6 +1958,108 @@ export const platformIdentities = pgTable(
   ],
 );
 
+export const discordInstallations = pgTable(
+  "discord_installations",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    guildId: text("guild_id").notNull(),
+    teamId: uuid("team_id").notNull(),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+  },
+  (table) => [
+    unique("discord_installations_guild_id_unique").on(table.guildId),
+    index("discord_installations_team_id_idx").on(table.teamId),
+    foreignKey({
+      columns: [table.teamId],
+      foreignColumns: [teams.id],
+      name: "discord_installations_team_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.createdBy],
+      foreignColumns: [users.id],
+      name: "discord_installations_created_by_fkey",
+    }).onDelete("set null"),
+    pgPolicy("Discord installations can be managed by team members", {
+      as: "permissive",
+      for: "all",
+      to: ["authenticated"],
+      using: sql`(team_id IN ( SELECT private.get_teams_for_authenticated_user() AS get_teams_for_authenticated_user))`,
+      withCheck: sql`(team_id IN ( SELECT private.get_teams_for_authenticated_user() AS get_teams_for_authenticated_user))`,
+    }),
+  ],
+);
+
+export const botMessageLedger = pgTable(
+  "bot_message_ledger",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    provider: platformProviderEnum().notNull(),
+    teamId: uuid("team_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    externalTeamId: text("external_team_id").default("").notNull(),
+    threadId: text("thread_id").notNull(),
+    externalUserId: text("external_user_id").notNull(),
+    messageId: text("message_id").notNull(),
+    status: text().default("started").notNull(),
+    attemptId: text("attempt_id"),
+    leaseUntil: timestamp("lease_until", {
+      withTimezone: true,
+      mode: "string",
+    }),
+    executionStarted: boolean("execution_started").default(false).notNull(),
+    responseText: text("response_text"),
+    toolContext: text("tool_context"),
+    deliveredChunks: integer("delivered_chunks").default(0).notNull(),
+    completedAt: timestamp("completed_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+  },
+  (table) => [
+    unique("bot_message_ledger_delivery_unique").on(
+      table.provider,
+      table.externalTeamId,
+      table.threadId,
+      table.externalUserId,
+      table.messageId,
+    ),
+    index("bot_message_ledger_team_id_idx").on(table.teamId),
+    foreignKey({
+      columns: [table.teamId],
+      foreignColumns: [teams.id],
+      name: "bot_message_ledger_team_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "bot_message_ledger_user_id_fkey",
+    }).onDelete("cascade"),
+    pgPolicy("Bot message ledger is scoped to team members", {
+      as: "permissive",
+      for: "all",
+      to: ["authenticated"],
+      using: sql`(team_id IN ( SELECT private.get_teams_for_authenticated_user() AS get_teams_for_authenticated_user))`,
+      withCheck: sql`(team_id IN ( SELECT private.get_teams_for_authenticated_user() AS get_teams_for_authenticated_user))`,
+    }),
+  ],
+);
+
 export const platformLinkTokens = pgTable(
   "platform_link_tokens",
   {

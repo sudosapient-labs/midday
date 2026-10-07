@@ -1,4 +1,5 @@
 import { openai } from "@ai-sdk/openai";
+import { guardBotTools } from "@api/bot/tool-approval";
 import {
   buildLexicalPrepareStep,
   buildPrepareStep,
@@ -24,8 +25,15 @@ export async function streamMiddayAssistant(params: {
   mcpCtx: McpContext;
   systemPrompt: string;
   modelMessages: Array<ModelMessage>;
+  enableComposioTools?: boolean;
+  botApproval?: Parameters<typeof guardBotTools>[1];
 }) {
-  const { mcpCtx, systemPrompt, modelMessages } = params;
+  const {
+    mcpCtx,
+    systemPrompt,
+    modelMessages,
+    enableComposioTools = true,
+  } = params;
 
   const useToolIndex = process.env.OPENAI_DISABLE_TOOL_INDEX !== "true";
   if (useToolIndex) {
@@ -36,7 +44,7 @@ export async function streamMiddayAssistant(params: {
 
   const [resolvedClient, composioMetaTools] = await Promise.all([
     createExecutionClient(mcpCtx),
-    getComposioTools(mcpCtx.userId),
+    enableComposioTools ? getComposioTools(mcpCtx.userId) : Promise.resolve({}),
   ]);
 
   let closed = false;
@@ -50,8 +58,13 @@ export async function streamMiddayAssistant(params: {
     const toolDefinitions = useToolIndex
       ? getToolDefinitions()
       : getGatewayCompatibleToolDefinitions();
-    const mcpTools = resolvedClient.toolsFromDefinitions(toolDefinitions);
+    const rawMcpTools = resolvedClient.toolsFromDefinitions(toolDefinitions);
+    const mcpTools = params.botApproval
+      ? guardBotTools(rawMcpTools, params.botApproval)
+      : rawMcpTools;
     const composioToolNames = Object.keys(composioMetaTools);
+    const pendingToolNames =
+      params.botApproval?.pending.map((item) => item.toolName) ?? [];
     const webSearchTools: ToolSet = {};
     if (process.env.OPENAI_ENABLE_WEB_SEARCH !== "false") {
       webSearchTools.web_search = openai.tools.webSearch({
@@ -86,6 +99,7 @@ export async function streamMiddayAssistant(params: {
               ...Object.keys(webSearchTools),
               "search_tools",
               ...composioToolNames,
+              ...pendingToolNames,
             ],
           })
         : buildLexicalPrepareStep({
@@ -94,6 +108,7 @@ export async function streamMiddayAssistant(params: {
             alwaysActive: [
               ...Object.keys(webSearchTools),
               ...composioToolNames,
+              ...pendingToolNames,
             ],
           }),
       // This OpenAI-compatible gateway does not persist Responses API items.
