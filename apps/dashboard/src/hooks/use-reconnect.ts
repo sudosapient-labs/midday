@@ -1,12 +1,9 @@
 "use client";
 
 import { useToast } from "@midday/ui/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-import { useAction } from "next-safe-action/hooks";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { manualSyncTransactionsAction } from "@/actions/transactions/manual-sync-transactions-action";
-import { reconnectConnectionAction } from "@/actions/transactions/reconnect-connection-action";
 import { useSyncStatus } from "@/hooks/use-sync-status";
 import { useTRPC } from "@/trpc/client";
 
@@ -44,10 +41,9 @@ export function useReconnect({
   const { toast, dismiss } = useToast();
 
   const [runId, setRunId] = useState<string | undefined>();
-  const [accessToken, setAccessToken] = useState<string | undefined>();
   const [isSyncing, setSyncing] = useState(false);
 
-  const { status, setStatus } = useSyncStatus({ runId, accessToken });
+  const { status, setStatus } = useSyncStatus({ runId });
 
   const [params, setParams] = useQueryStates({
     step: parseAsString,
@@ -58,48 +54,50 @@ export function useReconnect({
   const hasTriggeredRef = useRef(false);
 
   // Manual sync action (for sync button)
-  const manualSyncTransactions = useAction(manualSyncTransactionsAction, {
-    onExecute: () => setSyncing(true),
-    onSuccess: ({ data }) => {
-      if (data) {
-        setRunId(data.id);
-        setAccessToken(data.publicAccessToken);
-      }
-    },
-    onError: () => {
-      setSyncing(false);
-      setRunId(undefined);
-      setStatus("FAILED");
+  const manualSyncTransactions = useMutation(
+    trpc.bankConnections.sync.mutationOptions({
+      onMutate: () => setSyncing(true),
+      onSuccess: (data) => {
+        if (data) {
+          setRunId(data.id);
+        }
+      },
+      onError: () => {
+        setSyncing(false);
+        setRunId(undefined);
+        setStatus("FAILED");
 
-      toast({
-        duration: 3500,
-        variant: "error",
-        title: "Something went wrong please try again.",
-      });
-    },
-  });
+        toast({
+          duration: 3500,
+          variant: "error",
+          title: "Something went wrong please try again.",
+        });
+      },
+    }),
+  );
 
   // Reconnect action (for reconnect flow)
-  const reconnectConnection = useAction(reconnectConnectionAction, {
-    onExecute: () => setSyncing(true),
-    onSuccess: ({ data }) => {
-      if (data) {
-        setRunId(data.id);
-        setAccessToken(data.publicAccessToken);
-      }
-    },
-    onError: () => {
-      setSyncing(false);
-      setRunId(undefined);
-      setStatus("FAILED");
+  const reconnectConnection = useMutation(
+    trpc.bankConnections.triggerReconnect.mutationOptions({
+      onMutate: () => setSyncing(true),
+      onSuccess: (data) => {
+        if (data) {
+          setRunId(data.id);
+        }
+      },
+      onError: () => {
+        setSyncing(false);
+        setRunId(undefined);
+        setStatus("FAILED");
 
-      toast({
-        duration: 3500,
-        variant: "error",
-        title: "Something went wrong please try again.",
-      });
-    },
-  });
+        toast({
+          duration: 3500,
+          variant: "error",
+          title: "Something went wrong please try again.",
+        });
+      },
+    }),
+  );
 
   // Show syncing toast when sync starts
   useEffect(() => {
@@ -180,7 +178,7 @@ export function useReconnect({
     ) {
       hasTriggeredRef.current = true;
 
-      reconnectConnection.execute({
+      reconnectConnection.mutate({
         connectionId,
         provider: provider as Provider,
       });
@@ -192,7 +190,7 @@ export function useReconnect({
 
   // Trigger reconnect manually (for Teller which uses embedded SDK)
   const triggerReconnect = useCallback(() => {
-    reconnectConnection.execute({
+    reconnectConnection.mutate({
       connectionId,
       provider: provider as Provider,
     });
@@ -200,7 +198,7 @@ export function useReconnect({
 
   // Trigger manual sync (for sync button)
   const triggerManualSync = useCallback(() => {
-    manualSyncTransactions.execute({
+    manualSyncTransactions.mutate({
       connectionId,
     });
   }, [connectionId]);

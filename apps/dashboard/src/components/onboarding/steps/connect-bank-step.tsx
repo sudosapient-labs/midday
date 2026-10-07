@@ -9,7 +9,7 @@ import { useConnectParams } from "@/hooks/use-connect-params";
 type Props = {
   onContinue: () => void;
   defaultCountryCodePromise: Promise<string>;
-  onSyncStarted?: (data: { runId: string; accessToken: string }) => void;
+  onSyncStarted?: (data: { runId: string }) => void;
 };
 
 export function ConnectBankStep({

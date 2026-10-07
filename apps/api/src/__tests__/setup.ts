@@ -752,6 +752,8 @@ export const mocks = {
   // Bank connections
   getBankConnections: mock(() => Promise.resolve([])) as MockFn,
   deleteBankConnection: mock(() => Promise.resolve(null)) as MockFn,
+  createBankConnection: mock(() => Promise.resolve(null)) as MockFn,
+  getInboxAccountById: mock(() => Promise.resolve(null)) as MockFn,
 
   // Inbox accounts (tRPC inbox-accounts router)
   getInboxAccounts: mock(() => Promise.resolve([])) as MockFn,
@@ -781,6 +783,12 @@ export const mocks = {
   // Other commonly used queries
   validateAccessToken: mock(() => null) as MockFn,
   triggerJob: mock(() => ({ id: "job-123" })) as MockFn,
+  removeJobScheduler: mock(() => Promise.resolve(true)) as MockFn,
+  getQueue: mock(() => ({
+    getJob: mock(() => null),
+    getJobs: mock(() => []),
+    removeJobScheduler: mocks.removeJobScheduler,
+  })) as MockFn,
   signedUrl: mock(() => ({
     data: { signedUrl: "https://example.com/signed" },
     error: null,
@@ -915,7 +923,7 @@ const dbQueriesMock = new Proxy(
     getInboxByStatus: mocks.getInboxByStatus,
     getInboxSearch: mocks.getInboxSearch,
     getInboxAccounts: mocks.getInboxAccounts,
-    getInboxAccountById: createDefaultMock(),
+    getInboxAccountById: mocks.getInboxAccountById,
     upsertInboxAccount: createDefaultMock(),
     updateInboxAccount: createDefaultMock(),
     deleteInboxAccount: mocks.deleteInboxAccount,
@@ -1112,7 +1120,7 @@ const dbQueriesMock = new Proxy(
 
     // Bank connections (mutations on router)
     addProviderAccounts: createDefaultMock(),
-    createBankConnection: createDefaultMock(),
+    createBankConnection: mocks.createBankConnection,
     reconnectBankConnection: createDefaultMock(),
 
     // OAuth applications router (additional @midday/db/queries named imports)
@@ -1193,10 +1201,7 @@ mock.module("@midday/supabase/storage", () => ({
 mock.module("@midday/job-client", () => ({
   triggerJob: mocks.triggerJob,
   getJobStatus: mocks.getJobStatus,
-  getQueue: mock(() => ({
-    getJob: mock(() => null),
-    getJobs: mock(() => []),
-  })),
+  getQueue: mocks.getQueue,
   decodeJobId: mock((id: string) => ({ id, queue: "default" })),
 }));
 
@@ -1216,15 +1221,6 @@ mock.module("@midday/documents/embed", () => ({
         model: "gemini-embedding-001",
       };
     }
-  },
-}));
-
-mock.module("@trigger.dev/sdk", () => ({
-  tasks: {
-    trigger: mock(() => Promise.resolve({ id: "evt_trigger_test" })),
-  },
-  schedules: {
-    del: mock(() => Promise.resolve()),
   },
 }));
 
