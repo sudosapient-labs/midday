@@ -1,17 +1,17 @@
 import { createDiscordAdapter } from "@chat-adapter/discord";
-import { createSlackAdapter } from "@chat-adapter/slack";
 import { createRedisState } from "@chat-adapter/state-redis";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import { resolveRedisUrl } from "@midday/cache/shared-redis";
 import { Chat } from "chat";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
+import { createWorkspaceSlackAdapter } from "./slack-adapter";
 
 export function createMiddayBot() {
   const adapters = {
     whatsapp: createWhatsAppAdapter(),
     telegram: createTelegramAdapter(),
-    slack: createSlackAdapter(),
+    slack: createWorkspaceSlackAdapter(),
     sendblue: createSendblueAdapter(),
   };
 
