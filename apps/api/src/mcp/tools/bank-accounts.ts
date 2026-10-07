@@ -39,7 +39,7 @@ export const registerBankAccountTools: RegisterTools = (server, ctx) => {
     {
       title: "List Bank Accounts",
       description:
-        "List all connected bank accounts for the team. Returns account name, type, balance, currency, and connection info (institution name and logo). Filter by enabled/manual to narrow results.",
+        "List bank-synced AND manual accounts for the team. Returns account IDs, names, types, balances, currencies, and connection info. For expense entry, use enabled=true and omit manual to include both kinds. manual=false excludes manual accounts; an empty filtered result does not mean the team has no accounts.",
       inputSchema: getBankAccountsSchema.shape,
       outputSchema: {
         data: z.array(z.record(z.string(), z.any())),
