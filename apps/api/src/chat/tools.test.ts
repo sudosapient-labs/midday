@@ -1,5 +1,50 @@
 import { describe, expect, test } from "bun:test";
-import { getRequiredLexicalTools } from "./tools";
+import { getRequiredLexicalTools, modelMessageText } from "./tools";
+
+describe("follow-up routing", () => {
+  const route = (...texts: string[]) =>
+    getRequiredLexicalTools(
+      modelMessageText(
+        texts.map((content) => ({ role: "user" as const, content })),
+      ),
+    );
+
+  test.each([
+    "try again, and create these issues",
+    "yes, save it",
+    "try again",
+  ])("retains transaction tools for %s", (reply) => {
+    expect(route("add these transactions", reply)).toContain(
+      "transactions_create_bulk",
+    );
+  });
+
+  test("retains domain across repeated short follow-ups", () => {
+    expect(route("add these transactions", "yes", "try again")).toContain(
+      "transactions_create_bulk",
+    );
+  });
+
+  test("respects an explicit plural domain switch", () => {
+    expect(route("add these transactions", "create invoices")).toEqual([]);
+  });
+
+  test("does not inherit an earlier destructive action", () => {
+    const tools = route("delete these transactions", "create these instead");
+    expect(tools).toContain("transactions_create_bulk");
+    expect(tools).not.toContain("transactions_delete");
+  });
+
+  test("does not inherit write intent for a new read-only question", () => {
+    expect(
+      route("add these transactions", "how much were they?"),
+    ).not.toContain("transactions_create_bulk");
+    expect(route("add these transactions", "what is my balance?")).toEqual([
+      "bank_accounts_balances",
+      "bank_accounts_list",
+    ]);
+  });
+});
 
 describe("lexical transaction tool routing", () => {
   test("routes a spending question to read-only report tools", () => {
@@ -14,6 +59,7 @@ describe("lexical transaction tool routing", () => {
     expect(getRequiredLexicalTools("save these expenses")).toEqual([
       "categories_list",
       "bank_accounts_list",
+      "transactions_list",
       "transactions_create",
       "transactions_create_bulk",
     ]);

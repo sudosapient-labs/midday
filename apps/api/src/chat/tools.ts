@@ -232,7 +232,7 @@ const DOMAIN_ALIASES: Record<string, string[]> = {
   transaction: ["transaction"],
 };
 
-function modelMessageText(messages: ModelMessage[]): string {
+export function modelMessageText(messages: ModelMessage[]): string {
   const userTexts = messages
     .filter((message) => message.role === "user")
     .flatMap((message) => {
@@ -245,20 +245,30 @@ function modelMessageText(messages: ModelMessage[]): string {
     });
 
   const latest = userTexts.at(-1) ?? "";
-  // Route from the current request whenever it names a domain. For short
-  // follow-ups such as “yes, save it” or “what about that?”, retain one prior
-  // turn so the required tool family is still available without allowing an
-  // old write request to contaminate every later question.
-  if (
-    /\b(?:account|balance|cash|category|customer|document|expense|invoice|money|payment|project|receipt|report|revenue|runway|spend|spent|tag|tax|team|time|transaction|tracker|save|create|update|delete|send)\b/iu.test(
-      latest,
-    ) ||
-    userTexts.length < 2
-  ) {
+  // Action verbs are not domains: "create these" and "yes, save it" need
+  // context. Explicit domain switches (including plurals) stand on their own.
+  const domain =
+    /\b(?:accounts?|balances?|cash|categor(?:y|ies)|customers?|documents?|expenses?|invoices?|money|payments?|projects?|receipts?|reports?|revenue|runway|spend(?:ing)?|spent|tags?|tax|teams?|time|transactions?|tracker|github|linear|notion|gmail)\b/giu;
+  if (latest.match(domain) || userTexts.length < 2) {
     return latest;
   }
 
-  return userTexts.slice(-2).join(" ");
+  const prior = userTexts
+    .slice(-6, -1)
+    .reverse()
+    .find((text) => text.match(domain));
+  if (!prior) return latest;
+
+  // Retry/confirmation retains intent; a new question inherits only domain
+  // words, never a stale create/delete instruction from a previous turn.
+  const hasAction =
+    /\b(?:save|create|add|book|enter|log|record|store|track|change|correct|edit|fix|update|delete|remove|void)\b/iu.test(
+      latest,
+    );
+  const followUp =
+    !hasAction &&
+    /\b(?:try again|retry|yes|confirm(?:ed)?|go ahead|do it)\b/iu.test(latest);
+  return `${followUp ? prior : (prior.match(domain) ?? []).join(" ")} ${latest}`;
 }
 
 function lexicalTokens(text: string): Set<string> {
@@ -320,6 +330,7 @@ export function getRequiredLexicalTools(query: string): string[] {
     return [
       "categories_list",
       "bank_accounts_list",
+      "transactions_list",
       "transactions_create",
       "transactions_create_bulk",
     ];

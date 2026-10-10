@@ -26,6 +26,7 @@ import {
   canReuseCachedThreadState,
 } from "@api/bot/thread-state";
 import { streamMiddayAssistant } from "@api/chat/assistant-runtime";
+import { checkedAssistantStream } from "@api/chat/diagnostics";
 import { buildSystemPrompt } from "@api/chat/prompt";
 import { stripFileAndImageParts } from "@api/chat/utils";
 import type { McpContext } from "@api/mcp/types";
@@ -145,6 +146,7 @@ export function registerMiddayBotRuntime() {
         error: error instanceof Error ? error.message : String(error),
         threadId: thread?.id,
       });
+      await postBotFailure(thread);
     }
   });
 
@@ -256,7 +258,10 @@ async function handleIncomingMessage(
   const history = await getConversationHistory(thread, message);
 
   const mcpCtx: McpContext = {
-    db,
+    // Bot turns bypass HTTP's read-after-write middleware. Keep tool reads
+    // consistent with writes within this conversation turn.
+    // biome-ignore lint/correctness/useHookAtTopLevel: Database routing, not a React hook.
+    db: db.usePrimaryOnly(),
     teamId: connectedConversation.teamId,
     userId: user.id,
     userEmail: user.email ?? null,
@@ -305,6 +310,7 @@ async function handleIncomingMessage(
     mcpCtx,
     systemPrompt,
     modelMessages: modelMessages as Array<ModelMessage>,
+    traceId: `${thread.id}:${message.id}`,
   });
 
   try {
@@ -319,8 +325,13 @@ async function handleIncomingMessage(
           "I couldn't generate a response for that request. Please try again.",
       );
     } else {
-      await thread.post(result.fullStream);
+      await thread.post(checkedAssistantStream(result.fullStream));
     }
+    logger.info("[bot] Reply posted", {
+      threadId: thread.id,
+      messageId: message.id,
+      platform,
+    });
   } finally {
     await result.cleanup();
   }

@@ -1,0 +1,8 @@
+# Narrow local hotfix: retain the tested dependencies and all unchanged source.
+# Preserve the live image under this tag before building (see audit notes).
+FROM midday-local-api:before-slack-fix-20261010
+COPY apps/api/src/bot/runtime.ts /app/apps/api/src/bot/runtime.ts
+COPY apps/api/src/chat/assistant-runtime.ts apps/api/src/chat/diagnostics.ts apps/api/src/chat/prompt.ts apps/api/src/chat/tools.ts /app/apps/api/src/chat/
+COPY apps/api/src/mcp/transaction-input.ts /app/apps/api/src/mcp/transaction-input.ts
+COPY apps/api/src/mcp/tools/transactions.ts /app/apps/api/src/mcp/tools/transactions.ts
+LABEL org.midday.local.patch="slack-transaction-flow-20261010"

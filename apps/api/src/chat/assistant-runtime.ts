@@ -19,13 +19,16 @@ import {
   ToolLoopAgent,
   type ToolSet,
 } from "ai";
+import { safeErrorDetails, toolOutcome } from "./diagnostics";
 
 export async function streamMiddayAssistant(params: {
   mcpCtx: McpContext;
   systemPrompt: string;
   modelMessages: Array<ModelMessage>;
+  traceId?: string;
 }) {
   const { mcpCtx, systemPrompt, modelMessages } = params;
+  const traceId = params.traceId ?? crypto.randomUUID();
 
   const useToolIndex = process.env.OPENAI_DISABLE_TOOL_INDEX !== "true";
   if (useToolIndex) {
@@ -105,7 +108,39 @@ export async function streamMiddayAssistant(params: {
         },
       },
       stopWhen: stepCountIs(10),
-      onFinish: closeClient,
+      onStepFinish: (step) => {
+        for (const part of step.content) {
+          if (part.type === "tool-call") {
+            logger.info("[chat] Tool called", {
+              traceId,
+              tool: part.toolName,
+              toolCallId: part.toolCallId,
+            });
+          } else if (part.type === "tool-result") {
+            logger.info("[chat] Tool completed", {
+              traceId,
+              tool: part.toolName,
+              toolCallId: part.toolCallId,
+              ...toolOutcome(part.output),
+            });
+          } else if (part.type === "tool-error") {
+            logger.error("[chat] Tool failed", {
+              traceId,
+              tool: part.toolName,
+              toolCallId: part.toolCallId,
+              ...safeErrorDetails(part.error),
+            });
+          }
+        }
+      },
+      onFinish: async (event) => {
+        logger.info("[chat] Generation finished", {
+          traceId,
+          finishReason: event.finishReason,
+          steps: event.steps.length,
+        });
+        await closeClient();
+      },
     });
 
     const result = await agent.stream({
@@ -115,6 +150,10 @@ export async function streamMiddayAssistant(params: {
 
     return Object.assign(result, { cleanup: closeClient });
   } catch (error) {
+    logger.error("[chat] Generation failed", {
+      traceId,
+      ...safeErrorDetails(error),
+    });
     await closeClient();
     throw error;
   }

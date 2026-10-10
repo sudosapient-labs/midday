@@ -1,0 +1,6 @@
+services:
+  api:
+    image: midday-local-api:slack-fix-20261010
+    build:
+      context: /root/midday-slack-fix
+      dockerfile: apps/api/Dockerfile.slack-fix

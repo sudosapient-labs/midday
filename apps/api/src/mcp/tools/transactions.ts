@@ -1,5 +1,5 @@
+import { safeErrorDetails } from "@api/chat/diagnostics";
 import {
-  createTransactionSchema,
   deleteTransactionSchema,
   getTransactionByIdSchema,
   getTransactionsSchema,
@@ -25,6 +25,7 @@ import {
   triggerJob,
   triggerJobAndWait,
 } from "@midday/job-client";
+import { logger } from "@midday/logger";
 import { z } from "zod";
 import {
   mcpTransactionDetailSchema,
@@ -32,6 +33,10 @@ import {
   sanitize,
   sanitizeArray,
 } from "../schemas";
+import {
+  assistantTransactionSchema,
+  normalizeAssistantTransaction,
+} from "../transaction-input";
 import {
   DESTRUCTIVE_ANNOTATIONS,
   hasScope,
@@ -214,16 +219,24 @@ export const registerTransactionTools: RegisterTools = (server, ctx) => {
         title: "Create Transaction",
         description:
           "Create a manual transaction (not from bank sync). Requires bank account ID, amount, currency, date, and name. Use for manual entries and adjustments.",
-        inputSchema: createTransactionSchema.shape,
+        inputSchema: assistantTransactionSchema.shape,
         annotations: WRITE_ANNOTATIONS,
       },
       async (params) => {
         try {
-          const result = await createTransaction(db, { teamId, ...params });
+          const result = await createTransaction(db, {
+            teamId,
+            ...normalizeAssistantTransaction(params),
+          });
 
           if (!result) {
             return {
-              content: [{ type: "text", text: "Failed to create transaction" }],
+              content: [
+                {
+                  type: "text",
+                  text: "Could not read back the created transaction. Check existing transactions before retrying; the write outcome is uncertain.",
+                },
+              ],
               isError: true,
             };
           }
@@ -235,14 +248,15 @@ export const registerTransactionTools: RegisterTools = (server, ctx) => {
             structuredContent: { data: clean },
           };
         } catch (error) {
+          logger.error("[mcp] Transaction creation failed", {
+            tool: "transactions_create",
+            ...safeErrorDetails(error),
+          });
           return {
             content: [
               {
                 type: "text",
-                text:
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to create transaction",
+                text: "Transaction creation failed. Check existing transactions before retrying; do not assume nothing was saved.",
               },
             ],
             isError: true,
@@ -258,7 +272,7 @@ export const registerTransactionTools: RegisterTools = (server, ctx) => {
         description:
           "Create up to 100 manual transactions in one request. Each item follows the same shape as transactions_create.",
         inputSchema: z.object({
-          transactions: z.array(createTransactionSchema).min(1).max(100),
+          transactions: z.array(assistantTransactionSchema).min(1).max(100),
         }).shape,
         annotations: WRITE_ANNOTATIONS,
       },
@@ -266,24 +280,47 @@ export const registerTransactionTools: RegisterTools = (server, ctx) => {
         try {
           const result = await createTransactions(
             db,
-            items.map((item) => ({ ...item, teamId })),
+            items.map((item) => ({
+              ...normalizeAssistantTransaction(item),
+              teamId,
+            })),
           );
 
           const clean = sanitizeArray(mcpTransactionSchema, result ?? []);
+
+          if (clean.length !== items.length) {
+            logger.error("[mcp] Transaction result count mismatch", {
+              tool: "transactions_create_bulk",
+              requestedCount: items.length,
+              returnedCount: clean.length,
+            });
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "The write outcome is uncertain: not all created records could be read back. Check existing transactions before retrying to avoid duplicates.",
+                },
+              ],
+              structuredContent: { data: clean },
+              isError: true,
+            };
+          }
 
           return {
             content: [{ type: "text", text: JSON.stringify(clean) }],
             structuredContent: { data: clean },
           };
         } catch (error) {
+          logger.error("[mcp] Transaction creation failed", {
+            tool: "transactions_create_bulk",
+            requestedCount: items.length,
+            ...safeErrorDetails(error),
+          });
           return {
             content: [
               {
                 type: "text",
-                text:
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to create transactions",
+                text: "Transaction batch creation failed. Check existing transactions before retrying; do not assume nothing was saved.",
               },
             ],
             isError: true,
