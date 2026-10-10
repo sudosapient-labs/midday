@@ -22,6 +22,7 @@ for (const key of Object.keys(env)) {
 env.SLACK_AUDIT_TEST = "true";
 env.OPENAI_ENABLE_WEB_SEARCH = "false";
 env.REDIS_URL = "redis://127.0.0.1:1";
+env.REDIS_QUEUE_URL = "redis://127.0.0.1:1";
 const root = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const command = Bun.argv.slice(2);
 const args = [
@@ -41,7 +42,7 @@ const args = [
   "/app/apps/api",
   "--entrypoint",
   "bun",
-  "midday-local-api",
+  inspected[0].Config.Image,
   ...(command.length
     ? command
     : ["test", "src/chat/transaction-flow.integration.test.ts"]),

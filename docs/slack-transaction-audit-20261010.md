@@ -37,6 +37,7 @@ bun scripts/run-slack-audit.ts test --exit src/chat/tools.test.ts src/chat/diagn
 bun scripts/run-slack-audit.ts test --exit src/__tests__/routers/bot-runtime.test.ts
 bun scripts/run-slack-audit.ts test --exit /app/packages/bot/src/slack-adapter.test.ts
 bun scripts/run-slack-audit.ts test --exit src/chat/transaction-flow.integration.test.ts
+bun scripts/run-slack-audit.ts test --exit src/chat/slack-workflow.integration.test.ts
 ```
 
 The runner uses live model configuration but redirects every database connection
@@ -44,6 +45,20 @@ to `midday_slack_audit_20261010`. Financial fixtures are synthetic. External
 integrations are disabled. No real Slack messages or production financial writes
 are permitted. Tests assert 3 rows and the expected balance, empty-field handling,
 rollback on malformed UUIDs, and routing/stream-error regressions.
+
+Final results: 64 distinct passing tests across routing/input/diagnostics (21),
+bot runtime (22), Slack ingress (8), MCP authorization/schema (9), real database
+and model tests (3), and the combined signed Slack workflow (1).
+
+The combined workflow passed at 08:48:41 UTC with 17 assertions: no writes before
+confirmation, exactly 3 writes after confirmation, correct balance, completed
+native Slack streaming response containing a success acknowledgment, and no
+additional reply/records/balance change on duplicate delivery. It uses real bot
+handlers, identity/membership queries, model, MCP and SQL. Chat state/history
+are in-memory, and Slack HTTP is intercepted at the Axios transport; no real
+Slack delivery is claimed. An earlier harness attempt used an incomplete
+fetch-only interception and received `invalid_auth` using a fake token; no real
+message was sent. That attempt was not accepted as end-to-end success.
 
 A whole-API TypeScript check was stopped when it caused memory pressure on the
 shared host; do not describe that check as passed. Runtime suites and formatting

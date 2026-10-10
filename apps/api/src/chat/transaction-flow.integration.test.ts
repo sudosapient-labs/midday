@@ -70,7 +70,7 @@ test.skipIf(!enabled)(
     const client = await createExecutionClient(ctx);
     try {
       const tools = await client.tools();
-      const result = await tools.transactions_create_bulk!.execute!(
+      const result = (await tools.transactions_create_bulk!.execute!(
         {
           transactions: [
             {
@@ -101,17 +101,17 @@ test.skipIf(!enabled)(
           ],
         },
         { toolCallId: "audit-direct", messages: [] },
-      );
+      )) as { isError?: boolean; structuredContent?: { data?: unknown[] } };
       expect(result.isError).not.toBe(true);
-      expect(result.structuredContent.data).toHaveLength(3);
+      expect(result.structuredContent?.data).toHaveLength(3);
       const count = await db.execute(
         sql`select count(*)::int as count from transactions where team_id=${teamId}`,
       );
-      expect(count.rows[0].count).toBe(3);
+      expect(count.rows[0]?.count).toBe(3);
       const balance = await db.execute(
         sql`select balance from bank_accounts where id=${bankAccountId}`,
       );
-      expect(Number(balance.rows[0].balance)).toBe(216808);
+      expect(Number(balance.rows[0]?.balance)).toBe(216808);
     } finally {
       await client.close();
     }
@@ -223,11 +223,11 @@ test.skipIf(!enabled)(
       const count = await db.execute(
         sql`select count(*)::int as count from transactions where team_id=${teamId}`,
       );
-      expect(count.rows[0].count).toBe(3);
+      expect(count.rows[0]?.count).toBe(3);
       const balance = await db.execute(
         sql`select balance from bank_accounts where id=${bankAccountId}`,
       );
-      expect(Number(balance.rows[0].balance)).toBe(216808);
+      expect(Number(balance.rows[0]?.balance)).toBe(216808);
     } finally {
       await result.cleanup();
     }
