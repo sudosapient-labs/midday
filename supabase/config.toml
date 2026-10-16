@@ -30,7 +30,7 @@ port = 54322
 # Port used by db diff command to initialize the shadow database.
 shadow_port = 54320
 # Maximum amount of time to wait for health check when starting the local database.
-health_timeout = "2m"
+health_timeout = "10m"
 # The database major version to use. This has to be the same as your remote database's. Run `SHOW
 # server_version;` on the remote database to check.
 major_version = 17
@@ -77,7 +77,7 @@ allowed_cidrs_v6 = ["::/0"]
 [realtime]
 enabled = true
 # Bind realtime via either IPv4 or IPv6. (default: IPv4)
-# ip_version = "IPv6"
+ip_version = "IPv4"
 # The maximum length in bytes of HTTP request headers. (default: 4096)
 # max_header_length = 4096
 
@@ -216,14 +216,14 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Production email delivery through the verified sudosapient.dev Resend domain.
+# Local email delivery through the Supabase Mailpit container.
 [auth.email.smtp]
 enabled = true
-host = "smtp.resend.com"
-port = 587
-user = "resend"
-pass = "env(RESEND_API_KEY)"
-admin_email = "midday@sudosapient.dev"
+host = "supabase_inbucket_midday-mod"
+port = 1025
+user = "midday"
+pass = "midday"
+admin_email = "admin@midday.local"
 sender_name = "Midday"
 
 [auth.email.template.magic_link]
