@@ -882,6 +882,31 @@ export const invoiceRecurring = pgTable(
   ],
 );
 
+/** Rendered transaction emails awaiting delivery after activity creation commits. */
+export const transactionEmailOutbox = pgTable(
+  "transaction_email_outbox",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    payload: jsonb().$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+    deliveredAt: timestamp("delivered_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
+  },
+  (table) => [
+    index("transaction_email_outbox_pending_idx")
+      .on(table.createdAt)
+      .where(sql`${table.deliveredAt} IS NULL`),
+    index("transaction_email_outbox_team_id_idx").on(table.teamId),
+  ],
+).enableRLS();
+
 /** Durable status alerts, written atomically with invoice transitions. */
 export const invoiceStatusOutbox = pgTable(
   "invoice_status_outbox",

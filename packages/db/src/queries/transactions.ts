@@ -31,6 +31,7 @@ import {
   tags,
   transactionAttachments,
   transactionCategories,
+  transactionEmailOutbox,
   type transactionFrequencyEnum,
   transactionMatchSuggestions,
   transactions,
@@ -2270,6 +2271,7 @@ export async function getTransactionsReadyForExportCount(
     .from(transactions)
     .leftJoin(
       transactionAttachments,
+      transactionEmailOutbox,
       and(
         eq(transactionAttachments.transactionId, transactions.id),
         eq(transactionAttachments.teamId, teamId),
@@ -2386,4 +2388,47 @@ export async function claimTransactionNotifications(
       );
   }
   return batch;
+}
+
+/** Store a prepared email in the same transaction as its in-app activities. */
+export async function queueTransactionEmail(
+  tx: DatabaseOrTransaction,
+  teamId: string,
+  payload: Record<string, unknown>,
+) {
+  await tx.insert(transactionEmailOutbox).values({ teamId, payload });
+}
+
+/** Retry committed email work independently of the original bank job. */
+export async function deliverTransactionEmails(
+  db: Database,
+  send: (id: string, payload: Record<string, unknown>) => Promise<void>,
+  teamId?: string,
+) {
+  let delivered = 0;
+  for (; delivered < 1000; delivered++) {
+    const found = await db.transaction(async (tx) => {
+      const [email] = await tx
+        .select()
+        .from(transactionEmailOutbox)
+        .where(
+          and(
+            isNull(transactionEmailOutbox.deliveredAt),
+            teamId ? eq(transactionEmailOutbox.teamId, teamId) : undefined,
+          ),
+        )
+        .orderBy(asc(transactionEmailOutbox.createdAt))
+        .limit(1)
+        .for("update", { skipLocked: true });
+      if (!email) return false;
+      await send(email.id, email.payload);
+      await tx
+        .update(transactionEmailOutbox)
+        .set({ deliveredAt: new Date().toISOString() })
+        .where(eq(transactionEmailOutbox.id, email.id));
+      return true;
+    });
+    if (!found) break;
+  }
+  return delivered;
 }

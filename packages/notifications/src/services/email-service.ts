@@ -16,7 +16,10 @@ import type { EmailInput } from "../base";
 export class EmailService {
   private client: Resend;
 
-  constructor(private db: Database) {
+  constructor(
+    private db: Database,
+    private deferEmail?: (payload: CreateEmailOptions) => Promise<void>,
+  ) {
     this.client = new Resend(process.env.RESEND_API_KEY!);
   }
 
@@ -46,6 +49,15 @@ export class EmailService {
       const emailPayloads = await Promise.all(
         eligibleEmails.map((email) => this.#buildEmailPayload(email)),
       );
+
+      if (this.deferEmail) {
+        for (const payload of emailPayloads) await this.deferEmail(payload);
+        return {
+          sent: 0,
+          skipped: emails.length - eligibleEmails.length,
+          failed: 0,
+        };
+      }
 
       // Check if any emails have attachments - batch send doesn't support attachments
       const hasAttachments = emailPayloads.some(
@@ -88,6 +100,7 @@ export class EmailService {
         failed,
       };
     } catch (error) {
+      if (this.deferEmail) throw error;
       console.error("Failed to send emails:", error);
       return {
         sent: 0,

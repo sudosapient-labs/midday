@@ -3,6 +3,7 @@ import type { Job } from "bullmq";
 import { registerDynamicScheduler } from "../../schedulers/registry";
 import { generateCronTag } from "../../utils/generate-cron-tag";
 import { BaseProcessor } from "../base";
+import { dispatchTransactionEmails } from "./dispatch-transaction-emails";
 
 const PAGE_SIZE = 1000;
 
@@ -63,6 +64,8 @@ export class EnsureBankSchedulersProcessor extends BaseProcessor {
       registered,
       failed,
     });
+
+    await dispatchTransactionEmails();
 
     return { teams: teamIds.length, registered, failed };
   }

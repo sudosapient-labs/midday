@@ -6,6 +6,7 @@ import {
   shouldSendNotification,
   updateActivityMetadata,
 } from "@midday/db/queries";
+import type { CreateEmailOptions } from "resend";
 import type {
   EmailInput,
   NotificationOptions,
@@ -70,10 +71,14 @@ export class Notifications {
 
   #activityDb: DatabaseOrTransaction;
 
-  constructor(db: Database, activityDb: DatabaseOrTransaction = db) {
+  constructor(
+    db: Database,
+    activityDb: DatabaseOrTransaction = db,
+    deferEmail?: (payload: CreateEmailOptions) => Promise<void>,
+  ) {
     this.#activityDb = activityDb;
     this.#db = db;
-    this.#emailService = new EmailService(db);
+    this.#emailService = new EmailService(db, deferEmail);
   }
 
   #toUserData(
