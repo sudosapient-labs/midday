@@ -894,6 +894,7 @@ export const transactionEmailOutbox = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
+    permanentFailures: integer("permanent_failures").default(0).notNull(),
     attempts: integer().default(0).notNull(),
     lastAttemptAt: timestamp("last_attempt_at", {
       withTimezone: true,

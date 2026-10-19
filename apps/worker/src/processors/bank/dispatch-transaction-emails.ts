@@ -11,20 +11,26 @@ export async function dispatchTransactionEmails(teamId?: string) {
   return deliverTransactionEmails(
     getDb(),
     async (id, payload) => {
-      const { error } = await resend.emails.send(
-        payload as CreateEmailOptions,
-        {
+      let response: Awaited<ReturnType<typeof resend.emails.send>>;
+      try {
+        response = await resend.emails.send(payload as CreateEmailOptions, {
           idempotencyKey: `transaction-email-${id}`,
-        },
-      );
+        });
+      } catch (error) {
+        // Transport failures have no definitive provider response and remain retryable.
+        throw new TransactionEmailRetryableError(String(error));
+      }
+      const { error } = response;
       if (error) {
         if (
-          error.name === "rate_limit_exceeded" ||
-          error.name === "application_error"
+          error.name === "validation_error" ||
+          error.name === "missing_required_field"
         ) {
-          throw new TransactionEmailRetryableError(error.message);
+          throw new Error(`Transaction email failed: ${error.message}`);
         }
-        throw new Error(`Transaction email failed: ${error.message}`);
+        // Rate limits, provider outages and fixable service configuration errors
+        // must not permanently exhaust a committed email.
+        throw new TransactionEmailRetryableError(error.message);
       }
     },
     teamId,

@@ -2401,7 +2401,7 @@ export async function queueTransactionEmail(
 /** A transient sender failure that can be retried promptly with bounded backoff. */
 export class TransactionEmailRetryableError extends Error {}
 
-const MAX_TRANSACTION_EMAIL_ATTEMPTS = 10;
+const MAX_PERMANENT_EMAIL_FAILURES = 10;
 
 /** Retry committed email work independently of the original bank job. */
 export async function deliverTransactionEmails(
@@ -2419,7 +2419,10 @@ export async function deliverTransactionEmails(
         .where(
           and(
             isNull(transactionEmailOutbox.deliveredAt),
-            lt(transactionEmailOutbox.attempts, MAX_TRANSACTION_EMAIL_ATTEMPTS),
+            lt(
+              transactionEmailOutbox.permanentFailures,
+              MAX_PERMANENT_EMAIL_FAILURES,
+            ),
             attempted.length
               ? not(inArray(transactionEmailOutbox.id, attempted))
               : undefined,
@@ -2438,10 +2441,7 @@ export async function deliverTransactionEmails(
       let sendAttempts = 0;
       let failure: unknown;
       let succeeded = false;
-      const availableAttempts = Math.min(
-        3,
-        MAX_TRANSACTION_EMAIL_ATTEMPTS - email.attempts,
-      );
+      const availableAttempts = 3;
       for (; sendAttempts < availableAttempts; ) {
         sendAttempts++;
         try {
@@ -2469,6 +2469,10 @@ export async function deliverTransactionEmails(
             lastError:
               failure instanceof Error ? failure.message : String(failure),
             attempts: sql`${transactionEmailOutbox.attempts} + ${sendAttempts}`,
+            permanentFailures:
+              failure instanceof TransactionEmailRetryableError
+                ? email.permanentFailures
+                : sql`${transactionEmailOutbox.permanentFailures} + 1`,
           })
           .where(eq(transactionEmailOutbox.id, email.id));
         return "failed";
