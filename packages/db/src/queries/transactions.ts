@@ -2475,7 +2475,10 @@ export async function deliverTransactionEmails(
                 : sql`${transactionEmailOutbox.permanentFailures} + 1`,
           })
           .where(eq(transactionEmailOutbox.id, email.id));
-        return "failed";
+        // The same provider condition will very likely fail the remaining rows.
+        return failure instanceof TransactionEmailRetryableError
+          ? "provider_unavailable"
+          : "failed";
       }
       await tx
         .update(transactionEmailOutbox)
@@ -2488,7 +2491,7 @@ export async function deliverTransactionEmails(
         .where(eq(transactionEmailOutbox.id, email.id));
       return "delivered";
     });
-    if (!outcome) break;
+    if (!outcome || outcome === "provider_unavailable") break;
     if (outcome === "delivered") delivered++;
   }
   return delivered;
