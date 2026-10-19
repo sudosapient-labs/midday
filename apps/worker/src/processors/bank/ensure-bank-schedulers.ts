@@ -4,6 +4,8 @@ import { registerDynamicScheduler } from "../../schedulers/registry";
 import { generateCronTag } from "../../utils/generate-cron-tag";
 import { BaseProcessor } from "../base";
 
+const PAGE_SIZE = 1000;
+
 /**
  * Daily verification that every team with a bank connection has a
  * registered bank-sync-scheduler. Registration is idempotent (upsert),
@@ -13,12 +15,27 @@ export class EnsureBankSchedulersProcessor extends BaseProcessor {
   async process(_job: Job) {
     const supabase = createClient();
 
-    const { data: connections } = await supabase
-      .from("bank_connections")
-      .select("team_id")
-      .throwOnError();
+    // Page through the table: Supabase caps a single response at 1,000 rows
+    const teamIdSet = new Set<string>();
 
-    const teamIds = [...new Set((connections ?? []).map((row) => row.team_id))];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data: connections } = await supabase
+        .from("bank_connections")
+        .select("team_id")
+        .order("id")
+        .range(from, from + PAGE_SIZE - 1)
+        .throwOnError();
+
+      for (const row of connections ?? []) {
+        teamIdSet.add(row.team_id);
+      }
+
+      if ((connections?.length ?? 0) < PAGE_SIZE) {
+        break;
+      }
+    }
+
+    const teamIds = [...teamIdSet];
 
     let registered = 0;
     let failed = 0;
@@ -29,6 +46,7 @@ export class EnsureBankSchedulersProcessor extends BaseProcessor {
           template: "bank-sync-scheduler",
           accountId: teamId,
           cronPattern: generateCronTag(teamId),
+          force: true,
         });
         registered++;
       } catch (error) {

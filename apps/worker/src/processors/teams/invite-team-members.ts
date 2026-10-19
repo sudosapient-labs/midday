@@ -41,7 +41,10 @@ export class InviteTeamMembersProcessor extends BaseProcessor<InviteTeamMembersP
       })),
     );
 
-    await resend.batch.send(emails);
+    const { error } = await resend.batch.send(emails);
+    if (error) {
+      throw new Error(`Failed to send team invitation: ${error.message}`);
+    }
 
     return { sent: emails.length };
   }

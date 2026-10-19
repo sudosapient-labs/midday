@@ -40,6 +40,8 @@ import {
   teams,
   trackerEntries,
   trackerProjects,
+  transactionAttachments,
+  transactions,
   users,
 } from "../schema";
 import { logActivity } from "../utils/log-activity";
@@ -1154,6 +1156,139 @@ export async function updateInvoice(
   }
 
   return result;
+}
+
+export type MatchInvoicePaymentParams = {
+  invoiceId: string;
+  teamId: string;
+  amount: number;
+  currency: string;
+  /** Earliest transaction date (inclusive) that may count as the payment */
+  since: string;
+  paidAt: string;
+  attachment: { path: string[] | null; name: string; size: number | null };
+  /**
+   * Runs inside the database transaction once the invoice is claimed. If it
+   * throws, nothing is committed, so side effects that must not be lost
+   * (e.g. enqueueing a notification) can be made part of the transition.
+   */
+  beforeCommit?: () => Promise<void>;
+};
+
+/**
+ * Marks an invoice as paid by attaching it to the single unfulfilled
+ * transaction with the same amount and currency.
+ *
+ * Matching is serialized per team with an advisory lock and the claim,
+ * attachment and status change commit together, so two invoices can never
+ * claim the same transaction and a failure can't leave an attachment without
+ * a paid invoice (or the reverse).
+ */
+export async function markInvoicePaidFromTransaction(
+  db: Database,
+  params: MatchInvoicePaymentParams,
+): Promise<"paid" | "no_match" | "already_settled"> {
+  const { invoiceId, teamId, amount, currency, since, paidAt, attachment } =
+    params;
+
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${`invoice-payment-match:${teamId}`}))`,
+    );
+
+    const candidates = await tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.teamId, teamId),
+          eq(transactions.amount, amount),
+          eq(transactions.currency, currency),
+          gte(transactions.date, since),
+          sql`NOT (
+            EXISTS (
+              SELECT 1
+              FROM ${transactionAttachments}
+              WHERE ${eq(transactionAttachments.transactionId, transactions.id)}
+              AND ${eq(transactionAttachments.teamId, teamId)}
+            ) OR ${transactions.status} = 'completed'
+          )`,
+        ),
+      );
+
+    const [candidate] = candidates;
+
+    if (!candidate || candidates.length !== 1) {
+      return "no_match";
+    }
+
+    const [claimed] = await tx
+      .update(invoices)
+      .set({ status: "paid", paidAt })
+      .where(
+        and(
+          eq(invoices.id, invoiceId),
+          eq(invoices.teamId, teamId),
+          inArray(invoices.status, ["unpaid", "overdue"]),
+        ),
+      )
+      .returning({ id: invoices.id });
+
+    if (!claimed) {
+      return "already_settled";
+    }
+
+    await tx.insert(transactionAttachments).values({
+      type: "application/pdf",
+      path: attachment.path,
+      transactionId: candidate.id,
+      teamId,
+      name: attachment.name,
+      size: attachment.size,
+    });
+
+    await params.beforeCommit?.();
+
+    return "paid";
+  });
+}
+
+export type MarkInvoiceOverdueParams = {
+  invoiceId: string;
+  teamId: string;
+  /** See `MatchInvoicePaymentParams.beforeCommit` */
+  beforeCommit?: () => Promise<void>;
+};
+
+/**
+ * Moves an unpaid invoice to overdue. Returns false if it was no longer
+ * unpaid (already handled by a concurrent or earlier job).
+ */
+export async function markInvoiceOverdue(
+  db: Database,
+  params: MarkInvoiceOverdueParams,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(invoices)
+      .set({ status: "overdue" })
+      .where(
+        and(
+          eq(invoices.id, params.invoiceId),
+          eq(invoices.teamId, params.teamId),
+          eq(invoices.status, "unpaid"),
+        ),
+      )
+      .returning({ id: invoices.id });
+
+    if (!claimed) {
+      return false;
+    }
+
+    await params.beforeCommit?.();
+
+    return true;
+  });
 }
 
 export type GetMostActiveClientParams = {

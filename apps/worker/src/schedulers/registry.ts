@@ -123,7 +123,7 @@ export async function registerStaticSchedulers(): Promise<void> {
 export async function registerDynamicScheduler(
   params: RegisterDynamicSchedulerParams,
 ): Promise<void> {
-  const { template, accountId, cronPattern } = params;
+  const { template, accountId, cronPattern, force } = params;
 
   // Find the template
   const templateConfig = dynamicSchedulerTemplates.find(
@@ -137,8 +137,9 @@ export async function registerDynamicScheduler(
   const jobKey = templateConfig.jobKey(accountId);
   const payload = templateConfig.payloadGenerator(accountId);
 
-  // Check if already registered
-  if (registeredDynamicSchedulers.has(jobKey)) {
+  // The map is per-process, so it can't see a scheduler removed from Redis
+  // since; `force` lets recovery jobs re-upsert regardless
+  if (!force && registeredDynamicSchedulers.has(jobKey)) {
     logger.warn("Dynamic scheduler already registered, skipping", {
       jobKey,
     });

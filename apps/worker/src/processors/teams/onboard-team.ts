@@ -28,11 +28,12 @@ async function getUser(userId: string) {
     throw new Error(error.message);
   }
 
-  if (!user.full_name || !user.email) {
-    throw new Error("User data is missing");
+  if (!user.email) {
+    throw new Error("User email is missing");
   }
 
-  return { ...user, full_name: user.full_name, email: user.email };
+  // Both email templates handle an empty name
+  return { ...user, full_name: user.full_name ?? "", email: user.email };
 }
 
 /**
@@ -55,12 +56,16 @@ export class OnboardTeamProcessor extends BaseProcessor<OnboardTeamPayload> {
       });
     }
 
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       to: user.email,
       subject: "Welcome to Midday",
       from: FROM,
       html: await render(WelcomeEmail({ fullName: user.full_name })),
     });
+
+    if (error) {
+      throw new Error(`Failed to send welcome email: ${error.message}`);
+    }
 
     if (!user.team_id) {
       this.logger.info("User has no team, skipping activation email");
@@ -102,21 +107,29 @@ export class OnboardTeamActivationProcessor extends BaseProcessor<OnboardTeamPay
       return { sent: false };
     }
 
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from("bank_connections")
       .select("id", { count: "exact", head: true })
       .eq("team_id", user.team_id);
+
+    if (countError) {
+      throw new Error(countError.message);
+    }
 
     if (count) {
       return { sent: false };
     }
 
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from: FROM,
       to: user.email,
       subject: "Connect your bank to see the full picture",
       html: await render(TrialActivationEmail({ fullName: user.full_name })),
     });
+
+    if (error) {
+      throw new Error(`Failed to send activation email: ${error.message}`);
+    }
 
     return { sent: true };
   }
