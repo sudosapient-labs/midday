@@ -2,6 +2,7 @@ import { triggerJob } from "@midday/job-client";
 import { createClient } from "@midday/supabase/job";
 import type { Job } from "bullmq";
 import { BaseProcessor } from "../base";
+import { dispatchInvoiceStatusAlerts } from "./dispatch-status-alerts";
 
 const PAGE_SIZE = 1000;
 
@@ -11,6 +12,9 @@ const PAGE_SIZE = 1000;
  */
 export class InvoiceStatusSchedulerProcessor extends BaseProcessor {
   async process(_job: Job) {
+    // Recover alerts even for paid invoices whose check jobs exhausted retries.
+    await dispatchInvoiceStatusAlerts();
+
     const supabase = createClient();
 
     let count = 0;

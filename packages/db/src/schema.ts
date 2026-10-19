@@ -882,6 +882,42 @@ export const invoiceRecurring = pgTable(
   ],
 );
 
+/** Durable status alerts, written atomically with invoice transitions. */
+export const invoiceStatusOutbox = pgTable(
+  "invoice_status_outbox",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    payload: jsonb()
+      .$type<{
+        type: "invoice_paid" | "invoice_overdue";
+        teamId: string;
+        invoiceId: string;
+        invoiceNumber: string;
+        customerName?: string;
+        paidAt?: string;
+      }>()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+    deliveredAt: timestamp("delivered_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
+  },
+  (table) => [
+    index("invoice_status_outbox_pending_idx")
+      .on(table.createdAt)
+      .where(sql`${table.deliveredAt} IS NULL`),
+  ],
+).enableRLS();
+
 export const invoices = pgTable(
   "invoices",
   {

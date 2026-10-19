@@ -35,6 +35,7 @@ import {
   customers,
   invoiceRecurring,
   invoiceStatusEnum,
+  invoiceStatusOutbox,
   invoices,
   invoiceTemplates,
   teams,
@@ -1226,7 +1227,7 @@ export async function markInvoicePaidFromTransaction(
           inArray(invoices.status, ["unpaid", "overdue"]),
         ),
       )
-      .returning({ id: invoices.id });
+      .returning();
 
     if (!claimed) {
       return "already_settled";
@@ -1240,6 +1241,8 @@ export async function markInvoicePaidFromTransaction(
       name: attachment.name,
       size: attachment.size,
     });
+
+    await recordInvoiceStatusAlert(tx, claimed, "paid");
 
     return "paid";
   });
@@ -1269,14 +1272,80 @@ export async function markInvoiceOverdue(
           eq(invoices.status, "unpaid"),
         ),
       )
-      .returning({ id: invoices.id });
+      .returning();
 
     if (!claimed) {
       return false;
     }
 
+    await recordInvoiceStatusAlert(tx, claimed, "overdue");
+
     return true;
   });
+}
+
+/** Record only actual transitions, using the invoice snapshot in the same transaction. */
+async function recordInvoiceStatusAlert(
+  tx: DatabaseOrTransaction,
+  invoice: typeof invoices.$inferSelect,
+  status: "paid" | "overdue",
+) {
+  if (!invoice.invoiceNumber) return;
+  await tx.insert(invoiceStatusOutbox).values({
+    invoiceId: invoice.id,
+    teamId: invoice.teamId,
+    payload: {
+      type: status === "paid" ? "invoice_paid" : "invoice_overdue",
+      teamId: invoice.teamId,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      customerName: invoice.customerName ?? undefined,
+      ...(status === "paid" && invoice.paidAt
+        ? { paidAt: invoice.paidAt }
+        : {}),
+    },
+  });
+}
+
+/** Deliver committed alerts. Failed sends remain pending for later scheduler runs. */
+export async function deliverInvoiceStatusAlerts(
+  db: Database,
+  send: (
+    id: string,
+    payload: typeof invoiceStatusOutbox.$inferSelect.payload,
+  ) => Promise<void>,
+  invoiceId?: string,
+) {
+  // Commit each delivery separately so a later failure preserves earlier progress.
+  let delivered = 0;
+  for (; delivered < 1000; delivered++) {
+    const found = await db.transaction(async (tx) => {
+      const pending = await tx
+        .select()
+        .from(invoiceStatusOutbox)
+        .where(
+          and(
+            isNull(invoiceStatusOutbox.deliveredAt),
+            invoiceId
+              ? eq(invoiceStatusOutbox.invoiceId, invoiceId)
+              : undefined,
+          ),
+        )
+        .orderBy(asc(invoiceStatusOutbox.createdAt))
+        .limit(1)
+        .for("update", { skipLocked: true });
+      const [alert] = pending;
+      if (!alert) return false;
+      await send(alert.id, alert.payload);
+      await tx
+        .update(invoiceStatusOutbox)
+        .set({ deliveredAt: new Date().toISOString() })
+        .where(eq(invoiceStatusOutbox.id, alert.id));
+      return true;
+    });
+    if (!found) break;
+  }
+  return delivered;
 }
 
 export type GetMostActiveClientParams = {
