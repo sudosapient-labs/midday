@@ -1,4 +1,7 @@
-import { deliverTransactionEmails } from "@midday/db/queries";
+import {
+  deliverTransactionEmails,
+  TransactionEmailRetryableError,
+} from "@midday/db/queries";
 import { type CreateEmailOptions, Resend } from "resend";
 import { getDb } from "../../utils/db";
 
@@ -14,7 +17,15 @@ export async function dispatchTransactionEmails(teamId?: string) {
           idempotencyKey: `transaction-email-${id}`,
         },
       );
-      if (error) throw new Error(`Transaction email failed: ${error.message}`);
+      if (error) {
+        if (
+          error.name === "rate_limit_exceeded" ||
+          error.name === "application_error"
+        ) {
+          throw new TransactionEmailRetryableError(error.message);
+        }
+        throw new Error(`Transaction email failed: ${error.message}`);
+      }
     },
     teamId,
   );

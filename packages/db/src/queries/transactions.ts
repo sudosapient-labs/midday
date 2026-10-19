@@ -2398,6 +2398,11 @@ export async function queueTransactionEmail(
   await tx.insert(transactionEmailOutbox).values({ teamId, payload });
 }
 
+/** A transient sender failure that can be retried promptly with bounded backoff. */
+export class TransactionEmailRetryableError extends Error {}
+
+const MAX_TRANSACTION_EMAIL_ATTEMPTS = 10;
+
 /** Retry committed email work independently of the original bank job. */
 export async function deliverTransactionEmails(
   db: Database,
@@ -2414,6 +2419,7 @@ export async function deliverTransactionEmails(
         .where(
           and(
             isNull(transactionEmailOutbox.deliveredAt),
+            lt(transactionEmailOutbox.attempts, MAX_TRANSACTION_EMAIL_ATTEMPTS),
             attempted.length
               ? not(inArray(transactionEmailOutbox.id, attempted))
               : undefined,
@@ -2429,16 +2435,40 @@ export async function deliverTransactionEmails(
         .for("update", { skipLocked: true });
       if (!email) return null;
       attempted.push(email.id);
+      let sendAttempts = 0;
+      let failure: unknown;
+      let succeeded = false;
+      const availableAttempts = Math.min(
+        3,
+        MAX_TRANSACTION_EMAIL_ATTEMPTS - email.attempts,
+      );
+      for (; sendAttempts < availableAttempts; ) {
+        sendAttempts++;
+        try {
+          await send(email.id, email.payload);
+          succeeded = true;
+          break;
+        } catch (error) {
+          failure = error;
+          if (
+            !(error instanceof TransactionEmailRetryableError) ||
+            sendAttempts >= availableAttempts
+          )
+            break;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** (sendAttempts - 1)),
+          );
+        }
+      }
       const lastAttemptAt = new Date().toISOString();
-      try {
-        await send(email.id, email.payload);
-      } catch (error) {
+      if (!succeeded) {
         await tx
           .update(transactionEmailOutbox)
           .set({
             lastAttemptAt,
-            lastError: error instanceof Error ? error.message : String(error),
-            attempts: sql`${transactionEmailOutbox.attempts} + 1`,
+            lastError:
+              failure instanceof Error ? failure.message : String(failure),
+            attempts: sql`${transactionEmailOutbox.attempts} + ${sendAttempts}`,
           })
           .where(eq(transactionEmailOutbox.id, email.id));
         return "failed";
@@ -2449,7 +2479,7 @@ export async function deliverTransactionEmails(
           deliveredAt: new Date().toISOString(),
           lastAttemptAt,
           lastError: null,
-          attempts: sql`${transactionEmailOutbox.attempts} + 1`,
+          attempts: sql`${transactionEmailOutbox.attempts} + ${sendAttempts}`,
         })
         .where(eq(transactionEmailOutbox.id, email.id));
       return "delivered";

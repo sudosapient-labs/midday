@@ -250,7 +250,7 @@ export type UpdateActivityMetadataParams = {
  * Used to combine notifications by updating their metadata
  */
 export async function updateActivityMetadata(
-  db: Database,
+  db: DatabaseOrTransaction,
   params: UpdateActivityMetadataParams,
 ) {
   const { activityId, teamId, metadata } = params;
