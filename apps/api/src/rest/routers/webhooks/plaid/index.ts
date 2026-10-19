@@ -7,9 +7,8 @@ import {
   getBankConnectionByReferenceId,
   updateBankConnectionStatus,
 } from "@midday/db/queries";
-import type { SyncConnectionPayload } from "@midday/jobs/schema";
+import { triggerJob } from "@midday/job-client";
 import { logger } from "@midday/logger";
-import { tasks } from "@trigger.dev/sdk";
 import { isAfter, subDays } from "date-fns";
 import { HTTPException } from "hono/http-exception";
 
@@ -207,10 +206,11 @@ app.openapi(
             manualSync,
           });
 
-          await tasks.trigger("sync-connection", {
-            connectionId: connectionData.id,
-            manualSync,
-          } satisfies SyncConnectionPayload);
+          await triggerJob(
+            "sync-connection",
+            { connectionId: connectionData.id, manualSync },
+            "bank",
+          );
 
           break;
         }

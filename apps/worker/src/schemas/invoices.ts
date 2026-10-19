@@ -100,3 +100,15 @@ export const invoiceUpcomingNotificationSchema = z.object({});
 export type InvoiceUpcomingNotificationPayload = z.infer<
   typeof invoiceUpcomingNotificationSchema
 >;
+
+/**
+ * Check invoice status schema
+ * Marks an invoice paid when a matching transaction exists, or overdue
+ */
+export const checkInvoiceStatusSchema = z.object({
+  invoiceId: z.string().uuid(),
+});
+
+export type CheckInvoiceStatusPayload = z.infer<
+  typeof checkInvoiceStatusSchema
+>;

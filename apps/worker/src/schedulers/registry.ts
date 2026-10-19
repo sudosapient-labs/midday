@@ -1,6 +1,7 @@
 import { createLoggerWithContext } from "@midday/logger";
 import type { Queue } from "bullmq";
 import { accountingQueue } from "../queues/accounting";
+import { bankQueue } from "../queues/bank";
 import { documentsQueue } from "../queues/documents";
 import { inboxProviderQueue, inboxQueue } from "../queues/inbox";
 import { insightsQueue } from "../queues/insights";
@@ -8,6 +9,7 @@ import { institutionsQueue } from "../queues/institutions";
 import { invoicesQueue } from "../queues/invoices";
 import { notificationsQueue } from "../queues/notifications";
 import { ratesQueue } from "../queues/rates";
+import { teamsQueue } from "../queues/teams";
 import { transactionsQueue } from "../queues/transactions";
 import type { RegisterDynamicSchedulerParams } from "../types/scheduler-config";
 import { dynamicSchedulerTemplates, staticSchedulerConfigs } from "./index";
@@ -25,6 +27,10 @@ function getQueueByName(queueName: string): Queue {
       return inboxProviderQueue;
     case "transactions":
       return transactionsQueue;
+    case "bank":
+      return bankQueue;
+    case "teams":
+      return teamsQueue;
     case "documents":
       return documentsQueue;
     case "rates":
@@ -117,7 +123,7 @@ export async function registerStaticSchedulers(): Promise<void> {
 export async function registerDynamicScheduler(
   params: RegisterDynamicSchedulerParams,
 ): Promise<void> {
-  const { template, accountId, cronPattern } = params;
+  const { template, accountId, cronPattern, force } = params;
 
   // Find the template
   const templateConfig = dynamicSchedulerTemplates.find(
@@ -131,8 +137,9 @@ export async function registerDynamicScheduler(
   const jobKey = templateConfig.jobKey(accountId);
   const payload = templateConfig.payloadGenerator(accountId);
 
-  // Check if already registered
-  if (registeredDynamicSchedulers.has(jobKey)) {
+  // The map is per-process, so it can't see a scheduler removed from Redis
+  // since; `force` lets recovery jobs re-upsert regardless
+  if (!force && registeredDynamicSchedulers.has(jobKey)) {
     logger.warn("Dynamic scheduler already registered, skipping", {
       jobKey,
     });
@@ -194,16 +201,10 @@ export async function unregisterDynamicScheduler(
 
   const jobKey = templateConfig.jobKey(accountId);
 
-  if (!registeredDynamicSchedulers.has(jobKey)) {
-    logger.warn("Dynamic scheduler not registered", { jobKey });
-    return;
-  }
-
   try {
-    const queue = registeredDynamicSchedulers.get(jobKey);
-    if (!queue) {
-      return;
-    }
+    // Schedulers live in Redis, so resolve the queue from the template rather
+    // than the in-memory map, which is empty after a worker restart
+    const queue = getQueueByName(templateConfig.queue);
 
     // Remove job scheduler using the scheduler ID
     // With upsertJobScheduler, we can remove by calling removeJobScheduler

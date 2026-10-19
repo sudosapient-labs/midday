@@ -1,48 +1,51 @@
-import { useRealtimeRun } from "@trigger.dev/react-hooks";
 import { useEffect, useState } from "react";
+import { useJobStatus } from "@/hooks/use-job-status";
 
 type UseSyncStatusProps = {
+  /** Composite BullMQ job ID returned by the API (e.g., "bank:42") */
   runId?: string;
-  accessToken?: string;
 };
 
-export function useSyncStatus({
-  runId: initialRunId,
-  accessToken: initialAccessToken,
-}: UseSyncStatusProps) {
-  const [accessToken, setAccessToken] = useState<string | undefined>(
-    initialAccessToken,
-  );
-  const [runId, setRunId] = useState<string | undefined>(initialRunId);
-  const [status, setStatus] = useState<
-    "FAILED" | "SYNCING" | "COMPLETED" | null
-  >(null);
-  const { run, error } = useRealtimeRun(runId, {
-    enabled: !!runId && !!accessToken,
-    accessToken,
+export type SyncStatus = "FAILED" | "SYNCING" | "COMPLETED" | null;
+
+/**
+ * Track a background sync job by polling its BullMQ status
+ */
+export function useSyncStatus({ runId }: UseSyncStatusProps) {
+  const [status, setStatus] = useState<SyncStatus>(null);
+
+  const {
+    status: jobStatus,
+    result,
+    queryError,
+  } = useJobStatus({
+    jobId: runId,
+    enabled: !!runId,
   });
 
   useEffect(() => {
-    if (initialRunId && initialAccessToken) {
-      setAccessToken(initialAccessToken);
-      setRunId(initialRunId);
+    if (runId) {
       setStatus("SYNCING");
     }
-  }, [initialRunId, initialAccessToken]);
+  }, [runId]);
 
   useEffect(() => {
-    if (error || run?.status === "FAILED") {
+    if (!runId) {
+      return;
+    }
+
+    if (queryError || jobStatus === "failed") {
       setStatus("FAILED");
     }
 
-    if (run?.status === "COMPLETED") {
+    if (jobStatus === "completed") {
       setStatus("COMPLETED");
     }
-  }, [error, run]);
+  }, [runId, jobStatus, queryError]);
 
   return {
     status,
     setStatus,
-    result: run?.output,
+    result: result as Record<string, unknown> | undefined,
   };
 }

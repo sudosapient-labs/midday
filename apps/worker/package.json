@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "catalog:",
+    "@date-fns/tz": "catalog:",
     "@fast-csv/format": "catalog:",
     "@hono/node-server": "^1.19.11",
     "@midday/accounting": "workspace:*",

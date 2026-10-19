@@ -25,4 +25,14 @@ export const invoicesStaticSchedulers: StaticSchedulerConfig[] = [
       tz: "UTC",
     },
   },
+  {
+    name: "invoice-status-scheduler",
+    queue: "invoices",
+    cron: "0 0,12 * * *", // Twice daily at 00:00 and 12:00 UTC
+    jobName: "invoice-status-scheduler",
+    payload: {},
+    options: {
+      tz: "UTC",
+    },
+  },
 ];

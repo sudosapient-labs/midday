@@ -13,8 +13,8 @@ import {
 } from "@midday/db/queries";
 import { InboxConnector } from "@midday/inbox/connector";
 import { encryptOAuthState } from "@midday/inbox/utils";
+import { getQueue, triggerJob } from "@midday/job-client";
 import { createLoggerWithContext } from "@midday/logger";
-import { schedules, tasks } from "@trigger.dev/sdk";
 import { TRPCError } from "@trpc/server";
 
 const logger = createLoggerWithContext("trpc:inbox-accounts");
@@ -87,8 +87,19 @@ export const inboxAccountsRouter = createTRPCRouter({
         teamId: teamId!,
       });
 
-      if (data?.scheduleId) {
-        await schedules.del(data.scheduleId);
+      if (data) {
+        // Remove the account's BullMQ sync scheduler (registered by the
+        // worker's initial-setup job as `scheduler:inbox-sync-<id>`)
+        try {
+          await getQueue("inbox-provider").removeJobScheduler(
+            `scheduler:inbox-sync-${data.id}`,
+          );
+        } catch (error) {
+          logger.warn("Failed to remove inbox sync scheduler", {
+            inboxAccountId: data.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
       return data;
@@ -110,12 +121,15 @@ export const inboxAccountsRouter = createTRPCRouter({
         });
       }
 
-      const event = await tasks.trigger("sync-inbox-account", {
-        id: input.id,
-        manualSync: input.manualSync || false,
-      });
-
-      return event;
+      return triggerJob(
+        "sync-scheduler",
+        {
+          id: input.id,
+          teamId: teamId!,
+          manualSync: input.manualSync || false,
+        },
+        "inbox-provider",
+      );
     }),
 
   // initialSetup: protectedProcedure

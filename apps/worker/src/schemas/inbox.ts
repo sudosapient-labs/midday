@@ -69,6 +69,8 @@ export type InboxProviderInitialSetupPayload = z.infer<
 
 export const inboxProviderSyncAccountSchema = z.object({
   id: z.string().uuid(), // Inbox account ID
+  // Included so the dashboard can poll job status (jobs.getStatus checks teamId)
+  teamId: z.string().uuid().optional(),
   manualSync: z.boolean().optional(),
 });
 

@@ -76,3 +76,108 @@ describe("tRPC: bankConnections.delete", () => {
     );
   });
 });
+
+describe("tRPC: bankConnections job dispatch", () => {
+  beforeEach(() => {
+    mocks.triggerJob.mockReset();
+    mocks.triggerJob.mockImplementation(() =>
+      Promise.resolve({ id: "bank:1" }),
+    );
+    mocks.getBankConnections.mockReset();
+    mocks.getBankConnections.mockImplementation(() =>
+      Promise.resolve([{ id: CONN_ID }]),
+    );
+    mocks.deleteBankConnection.mockReset();
+    mocks.deleteBankConnection.mockImplementation(() =>
+      Promise.resolve({
+        id: CONN_ID,
+        referenceId: "ref-xyz",
+        provider: "gocardless",
+        accessToken: "token-abc",
+      }),
+    );
+    mocks.createBankConnection.mockReset();
+    mocks.createBankConnection.mockImplementation(() =>
+      Promise.resolve({ id: CONN_ID }),
+    );
+  });
+
+  test("create enqueues initial-bank-setup and returns the job id", async () => {
+    const caller = createCaller(createTestContext());
+    const result = await caller.create({
+      provider: "gocardless",
+      referenceId: "ref-xyz",
+      accounts: [
+        {
+          accountId: "acc-1",
+          institutionId: "inst-1",
+          bankName: "Test Bank",
+          name: "Checking",
+          currency: "EUR",
+          enabled: true,
+          balance: 0,
+          type: "depository",
+        },
+      ],
+    } as Parameters<ReturnType<typeof createCaller>["create"]>[0]);
+
+    expect(result).toEqual({ id: "bank:1" });
+    expect(mocks.triggerJob).toHaveBeenCalledWith(
+      "initial-bank-setup",
+      { connectionId: CONN_ID, teamId: "test-team-id" },
+      "bank",
+    );
+  });
+
+  test("delete enqueues provider cleanup on the bank queue", async () => {
+    const caller = createCaller(createTestContext());
+    await caller.delete({ id: CONN_ID });
+
+    expect(mocks.triggerJob).toHaveBeenCalledWith(
+      "delete-connection",
+      {
+        referenceId: "ref-xyz",
+        provider: "gocardless",
+        accessToken: "token-abc",
+      },
+      "bank",
+    );
+  });
+
+  test("sync enqueues a manual sync for an owned connection", async () => {
+    const caller = createCaller(createTestContext());
+    const result = await caller.sync({ connectionId: CONN_ID });
+
+    expect(result).toEqual({ id: "bank:1" });
+    expect(mocks.triggerJob).toHaveBeenCalledWith(
+      "sync-connection",
+      { connectionId: CONN_ID, teamId: "test-team-id", manualSync: true },
+      "bank",
+    );
+  });
+
+  test("sync rejects a connection owned by another team", async () => {
+    mocks.getBankConnections.mockImplementation(() => Promise.resolve([]));
+
+    const caller = createCaller(createTestContext());
+
+    await expect(caller.sync({ connectionId: CONN_ID })).rejects.toThrow(
+      "Bank connection not found",
+    );
+    expect(mocks.triggerJob).not.toHaveBeenCalled();
+  });
+
+  test("triggerReconnect enqueues reconnect-connection", async () => {
+    const caller = createCaller(createTestContext());
+    await caller.triggerReconnect({
+      connectionId: CONN_ID,
+      provider: "teller",
+    });
+
+    expect(mocks.triggerJob).toHaveBeenCalledWith(
+      "reconnect-connection",
+      { teamId: "test-team-id", connectionId: CONN_ID, provider: "teller" },
+      "bank",
+    );
+  });
+});

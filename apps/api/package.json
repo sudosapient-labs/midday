@@ -54,7 +54,6 @@
     "@scalar/hono-api-reference": "^0.10.5",
     "@sentry/bun": "catalog:",
     "@sindresorhus/slugify": "catalog:",
-    "@trigger.dev/sdk": "catalog:",
     "@trpc/server": "^11.16.0",
     "ai": "catalog:",
     "date-fns": "catalog:",

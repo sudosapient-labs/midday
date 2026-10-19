@@ -56,4 +56,6 @@ export interface RegisterDynamicSchedulerParams {
   accountId: string;
   /** Cron pattern */
   cronPattern: string;
+  /** Upsert even if this process already registered the scheduler */
+  force?: boolean;
 }

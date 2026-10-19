@@ -31,6 +31,7 @@ import {
   tags,
   transactionAttachments,
   transactionCategories,
+  transactionEmailOutbox,
   type transactionFrequencyEnum,
   transactionMatchSuggestions,
   transactions,
@@ -2353,4 +2354,145 @@ export async function moveTransactionToReview(
         eq(accountingSyncRecords.teamId, params.teamId),
       ),
     );
+}
+
+/** Claim unnotified rows within the caller's activity-creation transaction. */
+export async function claimTransactionNotifications(
+  tx: DatabaseOrTransaction,
+  teamId: string,
+) {
+  const batch = await tx
+    .select({
+      id: transactions.id,
+      date: transactions.date,
+      amount: transactions.amount,
+      name: transactions.name,
+      currency: transactions.currency,
+    })
+    .from(transactions)
+    .where(
+      and(eq(transactions.teamId, teamId), eq(transactions.notified, false)),
+    )
+    .orderBy(desc(transactions.date), asc(transactions.id))
+    .for("update");
+  if (batch.length) {
+    await tx
+      .update(transactions)
+      .set({ notified: true })
+      .where(
+        inArray(
+          transactions.id,
+          batch.map((transaction) => transaction.id),
+        ),
+      );
+  }
+  return batch;
+}
+
+/** Store a prepared email in the same transaction as its in-app activities. */
+export async function queueTransactionEmail(
+  tx: DatabaseOrTransaction,
+  teamId: string,
+  payload: Record<string, unknown>,
+) {
+  await tx.insert(transactionEmailOutbox).values({ teamId, payload });
+}
+
+/** A transient sender failure that can be retried promptly with bounded backoff. */
+export class TransactionEmailRetryableError extends Error {}
+
+const MAX_PERMANENT_EMAIL_FAILURES = 10;
+
+/** Retry committed email work independently of the original bank job. */
+export async function deliverTransactionEmails(
+  db: Database,
+  send: (id: string, payload: Record<string, unknown>) => Promise<void>,
+  teamId?: string,
+) {
+  let delivered = 0;
+  const attempted: string[] = [];
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const outcome = await db.transaction(async (tx) => {
+      const [email] = await tx
+        .select()
+        .from(transactionEmailOutbox)
+        .where(
+          and(
+            isNull(transactionEmailOutbox.deliveredAt),
+            lt(
+              transactionEmailOutbox.permanentFailures,
+              MAX_PERMANENT_EMAIL_FAILURES,
+            ),
+            attempted.length
+              ? not(inArray(transactionEmailOutbox.id, attempted))
+              : undefined,
+            teamId ? eq(transactionEmailOutbox.teamId, teamId) : undefined,
+          ),
+        )
+        .orderBy(
+          sql`${transactionEmailOutbox.lastAttemptAt} ASC NULLS FIRST`,
+          asc(transactionEmailOutbox.createdAt),
+          asc(transactionEmailOutbox.id),
+        )
+        .limit(1)
+        .for("update", { skipLocked: true });
+      if (!email) return null;
+      attempted.push(email.id);
+      let sendAttempts = 0;
+      let failure: unknown;
+      let succeeded = false;
+      const availableAttempts = 3;
+      for (; sendAttempts < availableAttempts; ) {
+        sendAttempts++;
+        try {
+          await send(email.id, email.payload);
+          succeeded = true;
+          break;
+        } catch (error) {
+          failure = error;
+          if (
+            !(error instanceof TransactionEmailRetryableError) ||
+            sendAttempts >= availableAttempts
+          )
+            break;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * 2 ** (sendAttempts - 1)),
+          );
+        }
+      }
+      const lastAttemptAt = new Date().toISOString();
+      if (!succeeded) {
+        await tx
+          .update(transactionEmailOutbox)
+          .set({
+            lastAttemptAt,
+            lastError:
+              failure instanceof Error ? failure.message : String(failure),
+            attempts: sql`${transactionEmailOutbox.attempts} + ${sendAttempts}`,
+            permanentFailures:
+              failure instanceof TransactionEmailRetryableError
+                ? email.permanentFailures
+                : sql`${transactionEmailOutbox.permanentFailures} + 1`,
+          })
+          .where(eq(transactionEmailOutbox.id, email.id));
+        // The same provider condition will very likely fail the remaining rows.
+        return failure instanceof TransactionEmailRetryableError
+          ? "provider_unavailable"
+          : "failed";
+      }
+      await tx
+        .update(transactionEmailOutbox)
+        .set({
+          deliveredAt: new Date().toISOString(),
+          lastAttemptAt,
+          lastError: null,
+          attempts: sql`${transactionEmailOutbox.attempts} + ${sendAttempts}`,
+        })
+        .where(eq(transactionEmailOutbox.id, email.id));
+      return "delivered";
+    });
+    if (!outcome || outcome === "provider_unavailable") break;
+    if (outcome === "delivered") delivered++;
+  }
+  return delivered;
 }

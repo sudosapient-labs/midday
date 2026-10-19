@@ -41,7 +41,6 @@ import {
 } from "@midday/db/queries";
 import { triggerJob } from "@midday/job-client";
 import { logger } from "@midday/logger";
-import { tasks } from "@trigger.dev/sdk";
 import { TRPCError } from "@trpc/server";
 
 export const teamRouter = createTRPCRouter({
@@ -395,9 +394,7 @@ export const teamRouter = createTRPCRouter({
           ),
       );
       const invites: InviteTeamMembersPayload["invites"] = uniqueInput
-        .filter((invite) =>
-          emailableAddresses.has(invite.email.toLowerCase()),
-        )
+        .filter((invite) => emailableAddresses.has(invite.email.toLowerCase()))
         .map((invite) => ({
           email: invite.email,
           invitedByName,
@@ -412,25 +409,12 @@ export const teamRouter = createTRPCRouter({
           ip,
           locale: "en",
         } satisfies InviteTeamMembersPayload;
-        const triggerKey = process.env.TRIGGER_SECRET_KEY?.trim();
-        const canUseTrigger =
-          process.env.NODE_ENV !== "production" ||
-          Boolean(triggerKey && triggerKey !== "local-disabled");
-
-        if (canUseTrigger) {
-          try {
-            await tasks.trigger("invite-team-members", payload);
-          } catch (error) {
-            logger.warn(
-              "[team.invite] Trigger.dev unavailable; sending directly",
-              {
-                error:
-                  error instanceof Error ? error.message : String(error),
-              },
-            );
-            await sendTeamInviteEmails(payload);
-          }
-        } else {
+        try {
+          await triggerJob("invite-team-members", payload, "teams");
+        } catch (error) {
+          logger.warn("[team.invite] Job queue unavailable; sending directly", {
+            error: error instanceof Error ? error.message : String(error),
+          });
           await sendTeamInviteEmails(payload);
         }
       }

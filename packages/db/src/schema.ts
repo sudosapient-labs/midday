@@ -882,6 +882,76 @@ export const invoiceRecurring = pgTable(
   ],
 );
 
+/** Rendered transaction emails awaiting delivery after activity creation commits. */
+export const transactionEmailOutbox = pgTable(
+  "transaction_email_outbox",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    payload: jsonb().$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+    permanentFailures: integer("permanent_failures").default(0).notNull(),
+    attempts: integer().default(0).notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
+    lastError: text("last_error"),
+    deliveredAt: timestamp("delivered_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
+  },
+  (table) => [
+    index("transaction_email_outbox_pending_idx")
+      .on(table.createdAt)
+      .where(sql`${table.deliveredAt} IS NULL`),
+    index("transaction_email_outbox_team_id_idx").on(table.teamId),
+  ],
+).enableRLS();
+
+/** Durable status alerts, written atomically with invoice transitions. */
+export const invoiceStatusOutbox = pgTable(
+  "invoice_status_outbox",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    payload: jsonb()
+      .$type<{
+        type: "invoice_paid" | "invoice_overdue";
+        teamId: string;
+        invoiceId: string;
+        invoiceNumber: string;
+        customerName?: string;
+        paidAt?: string;
+      }>()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+    deliveredAt: timestamp("delivered_at", {
+      withTimezone: true,
+      mode: "string",
+    }),
+  },
+  (table) => [
+    index("invoice_status_outbox_pending_idx")
+      .on(table.createdAt)
+      .where(sql`${table.deliveredAt} IS NULL`),
+    index("invoice_status_outbox_invoice_id_idx").on(table.invoiceId),
+    index("invoice_status_outbox_team_id_idx").on(table.teamId),
+  ],
+).enableRLS();
+
 export const invoices = pgTable(
   "invoices",
   {
