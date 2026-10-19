@@ -915,6 +915,8 @@ export const invoiceStatusOutbox = pgTable(
     index("invoice_status_outbox_pending_idx")
       .on(table.createdAt)
       .where(sql`${table.deliveredAt} IS NULL`),
+    index("invoice_status_outbox_invoice_id_idx").on(table.invoiceId),
+    index("invoice_status_outbox_team_id_idx").on(table.teamId),
   ],
 ).enableRLS();
 

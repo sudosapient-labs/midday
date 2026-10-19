@@ -2354,3 +2354,36 @@ export async function moveTransactionToReview(
       ),
     );
 }
+
+/** Claim unnotified rows within the caller's activity-creation transaction. */
+export async function claimTransactionNotifications(
+  tx: DatabaseOrTransaction,
+  teamId: string,
+) {
+  const batch = await tx
+    .select({
+      id: transactions.id,
+      date: transactions.date,
+      amount: transactions.amount,
+      name: transactions.name,
+      currency: transactions.currency,
+    })
+    .from(transactions)
+    .where(
+      and(eq(transactions.teamId, teamId), eq(transactions.notified, false)),
+    )
+    .orderBy(desc(transactions.date), asc(transactions.id))
+    .for("update");
+  if (batch.length) {
+    await tx
+      .update(transactions)
+      .set({ notified: true })
+      .where(
+        inArray(
+          transactions.id,
+          batch.map((transaction) => transaction.id),
+        ),
+      );
+  }
+  return batch;
+}

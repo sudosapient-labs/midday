@@ -1,4 +1,4 @@
-import type { Database } from "@midday/db/client";
+import type { Database, DatabaseOrTransaction } from "@midday/db/client";
 import {
   createActivity,
   getTeamById,
@@ -68,7 +68,10 @@ export class Notifications {
   #emailService: EmailService;
   #db: Database;
 
-  constructor(db: Database) {
+  #activityDb: DatabaseOrTransaction;
+
+  constructor(db: Database, activityDb: DatabaseOrTransaction = db) {
+    this.#activityDb = activityDb;
     this.#db = db;
     this.#emailService = new EmailService(db);
   }
@@ -129,7 +132,7 @@ export class Notifications {
                   activityInput.metadata as Record<string, any>,
                 );
 
-                const updated = await updateActivityMetadata(this.#db, {
+                const updated = await updateActivityMetadata(this.#activityDb, {
                   activityId: existingActivity.id,
                   teamId: user.team_id,
                   metadata: mergedMetadata,
@@ -177,7 +180,7 @@ export class Notifications {
         const validatedActivity = createActivitySchema.parse(activityInput);
 
         // Create activity directly using DB query
-        return createActivity(this.#db, validatedActivity);
+        return createActivity(this.#activityDb, validatedActivity);
       }),
     );
 

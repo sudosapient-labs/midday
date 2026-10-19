@@ -8,5 +8,9 @@ CREATE TABLE invoice_status_outbox (
 );
 CREATE INDEX invoice_status_outbox_pending_idx
   ON invoice_status_outbox (created_at) WHERE delivered_at IS NULL;
+CREATE INDEX invoice_status_outbox_invoice_id_idx
+  ON invoice_status_outbox (invoice_id);
+CREATE INDEX invoice_status_outbox_team_id_idx
+  ON invoice_status_outbox (team_id);
 -- Worker connections use the privileged database role; no client access.
 ALTER TABLE invoice_status_outbox ENABLE ROW LEVEL SECURITY;
