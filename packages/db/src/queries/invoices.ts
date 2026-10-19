@@ -1167,12 +1167,6 @@ export type MatchInvoicePaymentParams = {
   since: string;
   paidAt: string;
   attachment: { path: string[] | null; name: string; size: number | null };
-  /**
-   * Runs inside the database transaction once the invoice is claimed. If it
-   * throws, nothing is committed, so side effects that must not be lost
-   * (e.g. enqueueing a notification) can be made part of the transition.
-   */
-  beforeCommit?: () => Promise<void>;
 };
 
 /**
@@ -1247,8 +1241,6 @@ export async function markInvoicePaidFromTransaction(
       size: attachment.size,
     });
 
-    await params.beforeCommit?.();
-
     return "paid";
   });
 }
@@ -1256,8 +1248,6 @@ export async function markInvoicePaidFromTransaction(
 export type MarkInvoiceOverdueParams = {
   invoiceId: string;
   teamId: string;
-  /** See `MatchInvoicePaymentParams.beforeCommit` */
-  beforeCommit?: () => Promise<void>;
 };
 
 /**
@@ -1284,8 +1274,6 @@ export async function markInvoiceOverdue(
     if (!claimed) {
       return false;
     }
-
-    await params.beforeCommit?.();
 
     return true;
   });

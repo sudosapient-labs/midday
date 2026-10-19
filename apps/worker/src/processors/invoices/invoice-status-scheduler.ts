@@ -14,16 +14,22 @@ export class InvoiceStatusSchedulerProcessor extends BaseProcessor {
     const supabase = createClient();
 
     let count = 0;
+    let lastId: string | undefined;
 
-    // Page through the table: Supabase caps a single response at 1,000 rows
-    for (let from = 0; ; from += PAGE_SIZE) {
-      const { data: invoices } = await supabase
+    // Use a cursor because completed checks remove invoices from this result set.
+    for (;;) {
+      let query = supabase
         .from("invoices")
         .select("id")
         .in("status", ["unpaid", "overdue"])
         .order("id")
-        .range(from, from + PAGE_SIZE - 1)
-        .throwOnError();
+        .limit(PAGE_SIZE);
+
+      if (lastId) {
+        query = query.gt("id", lastId);
+      }
+
+      const { data: invoices } = await query.throwOnError();
 
       await Promise.all(
         (invoices ?? []).map((invoice) =>
@@ -36,6 +42,7 @@ export class InvoiceStatusSchedulerProcessor extends BaseProcessor {
       );
 
       count += invoices?.length ?? 0;
+      lastId = invoices?.at(-1)?.id;
 
       if ((invoices?.length ?? 0) < PAGE_SIZE) {
         break;

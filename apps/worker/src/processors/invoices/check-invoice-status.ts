@@ -23,7 +23,7 @@ export class CheckInvoiceStatusProcessor extends BaseProcessor<CheckInvoiceStatu
     const { data: invoice } = await supabase
       .from("invoices")
       .select(
-        "id, status, due_date, currency, amount, team_id, file_path, invoice_number, file_size, template, customer_name",
+        "id, status, paid_at, due_date, currency, amount, team_id, file_path, invoice_number, file_size, template, customer_name",
       )
       .eq("id", invoiceId)
       .maybeSingle()
@@ -32,6 +32,16 @@ export class CheckInvoiceStatusProcessor extends BaseProcessor<CheckInvoiceStatu
     if (!invoice?.amount || !invoice.currency || !invoice.due_date) {
       this.logger.warn("Invoice data is missing", { invoiceId });
       return { status: "skipped" };
+    }
+
+    // Recover an enqueue that failed after a successful commit. Only retries
+    // resend: daily checks of overdue invoices must not repeat old alerts.
+    if (job.attemptsMade > 0) {
+      if (invoice.status === "paid") {
+        await this.notify(invoice, "paid", invoice.paid_at ?? undefined);
+      } else if (invoice.status === "overdue") {
+        await this.notify(invoice, "overdue");
+      }
     }
 
     // A retried job may find the invoice already settled or cancelled
@@ -59,10 +69,10 @@ export class CheckInvoiceStatusProcessor extends BaseProcessor<CheckInvoiceStatu
         name: `${invoice.invoice_number}.pdf`,
         size: invoice.file_size,
       },
-      beforeCommit: () => this.notify(invoice, "paid", paidAt),
     });
 
     if (match === "paid") {
+      await this.notify(invoice, "paid", paidAt);
       this.logger.info("Invoice status changed to paid", { invoiceId });
       return { status: "paid" };
     }
@@ -81,10 +91,10 @@ export class CheckInvoiceStatusProcessor extends BaseProcessor<CheckInvoiceStatu
       const updated = await markInvoiceOverdue(getDb(), {
         invoiceId: invoice.id,
         teamId: invoice.team_id,
-        beforeCommit: () => this.notify(invoice, "overdue"),
       });
 
       if (updated) {
+        await this.notify(invoice, "overdue");
         this.logger.info("Invoice status changed to overdue", { invoiceId });
       }
 
@@ -94,11 +104,7 @@ export class CheckInvoiceStatusProcessor extends BaseProcessor<CheckInvoiceStatu
     return { status: invoice.status };
   }
 
-  /**
-   * Enqueue the status notification. Called just before the status change
-   * commits: a failure here rolls the change back so the retry starts clean,
-   * and the deterministic job id dedupes the enqueue if the commit fails.
-   */
+  /** Enqueue after commit; deterministic IDs deduplicate retry attempts. */
   private async notify(
     invoice: {
       id: string;
