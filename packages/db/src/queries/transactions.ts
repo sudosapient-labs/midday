@@ -2271,7 +2271,6 @@ export async function getTransactionsReadyForExportCount(
     .from(transactions)
     .leftJoin(
       transactionAttachments,
-      transactionEmailOutbox,
       and(
         eq(transactionAttachments.transactionId, transactions.id),
         eq(transactionAttachments.teamId, teamId),
@@ -2406,29 +2405,57 @@ export async function deliverTransactionEmails(
   teamId?: string,
 ) {
   let delivered = 0;
-  for (; delivered < 1000; delivered++) {
-    const found = await db.transaction(async (tx) => {
+  const attempted: string[] = [];
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const outcome = await db.transaction(async (tx) => {
       const [email] = await tx
         .select()
         .from(transactionEmailOutbox)
         .where(
           and(
             isNull(transactionEmailOutbox.deliveredAt),
+            attempted.length
+              ? not(inArray(transactionEmailOutbox.id, attempted))
+              : undefined,
             teamId ? eq(transactionEmailOutbox.teamId, teamId) : undefined,
           ),
         )
-        .orderBy(asc(transactionEmailOutbox.createdAt))
+        .orderBy(
+          sql`${transactionEmailOutbox.lastAttemptAt} ASC NULLS FIRST`,
+          asc(transactionEmailOutbox.createdAt),
+          asc(transactionEmailOutbox.id),
+        )
         .limit(1)
         .for("update", { skipLocked: true });
-      if (!email) return false;
-      await send(email.id, email.payload);
+      if (!email) return null;
+      attempted.push(email.id);
+      const lastAttemptAt = new Date().toISOString();
+      try {
+        await send(email.id, email.payload);
+      } catch (error) {
+        await tx
+          .update(transactionEmailOutbox)
+          .set({
+            lastAttemptAt,
+            lastError: error instanceof Error ? error.message : String(error),
+            attempts: sql`${transactionEmailOutbox.attempts} + 1`,
+          })
+          .where(eq(transactionEmailOutbox.id, email.id));
+        return "failed";
+      }
       await tx
         .update(transactionEmailOutbox)
-        .set({ deliveredAt: new Date().toISOString() })
+        .set({
+          deliveredAt: new Date().toISOString(),
+          lastAttemptAt,
+          lastError: null,
+          attempts: sql`${transactionEmailOutbox.attempts} + 1`,
+        })
         .where(eq(transactionEmailOutbox.id, email.id));
-      return true;
+      return "delivered";
     });
-    if (!found) break;
+    if (!outcome) break;
+    if (outcome === "delivered") delivered++;
   }
   return delivered;
 }
